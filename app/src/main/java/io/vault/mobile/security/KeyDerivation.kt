@@ -3,7 +3,6 @@ package io.vault.mobile.security
 import java.security.SecureRandom
 import javax.crypto.SecretKeyFactory
 import javax.crypto.spec.PBEKeySpec
-import android.util.Base64
 
 object KeyDerivation {
 

@@ -1,8 +1,9 @@
-package com.vault.android.security
+package io.vault.mobile.security
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotEquals
 import org.junit.Test
+import io.vault.mobile.security.KeyDerivation
 
 class EncryptionTest {
 
