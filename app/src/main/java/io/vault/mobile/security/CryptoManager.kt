@@ -1,5 +1,6 @@
 package io.vault.mobile.security
 
+import androidx.biometric.BiometricPrompt
 import android.security.keystore.KeyGenParameterSpec
 import android.security.keystore.KeyProperties
 import java.security.KeyStore
@@ -17,6 +18,7 @@ object CryptoManager {
     private const val TRANSFORMATION = "$ALGORITHM/$BLOCK_MODE/$PADDING"
 
     private const val KEY_ALIAS = "vault_master_key"
+    private const val BIOMETRIC_KEY_ALIAS = "biometric_vault_key"
 
     private val keyStore = KeyStore.getInstance("AndroidKeyStore").apply {
         load(null)
@@ -41,6 +43,33 @@ object CryptoManager {
                     .build()
             )
         }.generateKey()
+    }
+
+    private fun getBiometricKey(): SecretKey {
+        val existingKey = keyStore.getEntry(BIOMETRIC_KEY_ALIAS, null) as? KeyStore.SecretKeyEntry
+        return existingKey?.secretKey ?: createBiometricKey()
+    }
+
+    private fun createBiometricKey(): SecretKey {
+        val keyGenerator = KeyGenerator.getInstance(ALGORITHM, "AndroidKeyStore")
+        keyGenerator.init(
+            KeyGenParameterSpec.Builder(
+                BIOMETRIC_KEY_ALIAS,
+                KeyProperties.PURPOSE_ENCRYPT or KeyProperties.PURPOSE_DECRYPT
+            )
+                .setBlockModes(BLOCK_MODE)
+                .setEncryptionPaddings(PADDING)
+                .setUserAuthenticationRequired(true)
+                .setRandomizedEncryptionRequired(true)
+                .build()
+        )
+        return keyGenerator.generateKey()
+    }
+
+    fun getBiometricCryptoObject(): BiometricPrompt.CryptoObject {
+        val cipher = Cipher.getInstance(TRANSFORMATION)
+        cipher.init(Cipher.ENCRYPT_MODE, getBiometricKey())
+        return BiometricPrompt.CryptoObject(cipher)
     }
 
     fun encrypt(data: ByteArray): ByteArray {

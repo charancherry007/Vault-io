@@ -19,6 +19,7 @@ class BiometricAuthenticator(private val context: Context) {
         activity: FragmentActivity,
         title: String,
         subtitle: String,
+        cryptoObject: BiometricPrompt.CryptoObject? = null,
         onSuccess: () -> Unit,
         onError: (String) -> Unit
     ) {
@@ -47,6 +48,10 @@ class BiometricAuthenticator(private val context: Context) {
             .setAllowedAuthenticators(BiometricManager.Authenticators.BIOMETRIC_STRONG or BiometricManager.Authenticators.DEVICE_CREDENTIAL)
             .build()
 
-        biometricPrompt.authenticate(promptInfo)
+        if (cryptoObject != null) {
+            biometricPrompt.authenticate(promptInfo, cryptoObject)
+        } else {
+            biometricPrompt.authenticate(promptInfo)
+        }
     }
 }

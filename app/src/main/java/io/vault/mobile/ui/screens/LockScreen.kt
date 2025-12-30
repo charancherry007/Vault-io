@@ -34,6 +34,7 @@ fun LockScreen(
                 activity = context as FragmentActivity,
                 title = "VAULT ENCRYPTED",
                 subtitle = "Authenticate to unlock your secure vault",
+                cryptoObject = io.vault.mobile.security.CryptoManager.getBiometricCryptoObject(),
                 onSuccess = { onUnlock() },
                 onError = { errorMessage = it }
             )
@@ -69,6 +70,7 @@ fun LockScreen(
                     activity = context as FragmentActivity,
                     title = "VAULT ENCRYPTED",
                     subtitle = "Authenticate to unlock your secure vault",
+                    cryptoObject = io.vault.mobile.security.CryptoManager.getBiometricCryptoObject(),
                     onSuccess = { onUnlock() },
                     onError = { errorMessage = it }
                 )
@@ -94,6 +96,7 @@ fun LockScreen(
                     activity = context as FragmentActivity,
                     title = "VAULT ENCRYPTED",
                     subtitle = "Authenticate to unlock your secure vault",
+                    cryptoObject = io.vault.mobile.security.CryptoManager.getBiometricCryptoObject(),
                     onSuccess = { onUnlock() },
                     onError = { errorMessage = it }
                 )
