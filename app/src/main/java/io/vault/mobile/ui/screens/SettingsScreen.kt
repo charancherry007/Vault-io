@@ -37,7 +37,7 @@ fun SettingsScreen(
             CenterAlignedTopAppBar(
                 title = {
                     Text(
-                        "SYSTEM SETTINGS",
+                        "VAULT SETTINGS",
                         style = MaterialTheme.typography.titleLarge,
                         color = NeonBlue,
                         fontWeight = FontWeight.Black,
@@ -101,7 +101,7 @@ fun SettingsScreen(
             Spacer(modifier = Modifier.weight(1f))
             
             Text(
-                "App Version: 0.6.0",
+                "App Version: 0.7",
                 color = TextSecondary,
                 fontSize = 12.sp,
                 modifier = Modifier.align(Alignment.CenterHorizontally)

@@ -43,20 +43,25 @@ class MainActivity : FragmentActivity() {
                 when (currentStage) {
                     AppStage.Splash -> SplashScreen {
                         // Logic to decide next stage
+                        val isOnboardingCompleted = runBlocking { preferenceManager.onboardingCompleted.first() }
                         val isBiometricEnabled = runBlocking { preferenceManager.biometricEnabled.first() }
-                        if (isBiometricEnabled && biometricAuthenticator.isBiometricAvailable()) {
+                        
+                        if (!isOnboardingCompleted) {
+                            currentStage = AppStage.Onboarding
+                        } else if (isBiometricEnabled && biometricAuthenticator.isBiometricAvailable()) {
                             currentStage = AppStage.Lock
                         } else {
-                            currentStage = AppStage.Onboarding
+                            currentStage = AppStage.Main
                         }
                     }
                     AppStage.Lock -> LockScreen(
                         biometricAuthenticator = biometricAuthenticator,
                         onUnlock = { currentStage = AppStage.Main }
                     )
-                    AppStage.Onboarding -> OnboardingScreen {
-                        currentStage = AppStage.Main
-                    }
+                    AppStage.Onboarding -> OnboardingScreen(
+                        viewModel = androidx.hilt.navigation.compose.hiltViewModel(),
+                        onFinished = { currentStage = AppStage.Main }
+                    )
                     AppStage.Main -> VaultNavigation(
                         walletManager = walletManager,
                         rewardManager = rewardManager

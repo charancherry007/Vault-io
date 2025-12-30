@@ -23,12 +23,15 @@ import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-fun OnboardingScreen(onFinished: () -> Unit) {
+fun OnboardingScreen(
+    viewModel: io.vault.mobile.ui.viewmodel.VaultViewModel? = null,
+    onFinished: () -> Unit
+) {
     val pagerState = rememberPagerState(pageCount = { 3 })
     val scope = rememberCoroutineScope()
 
     val pages = listOf(
-        OnboardingPage("Zero-Knowledge", "All your data is encrypted with AES-256-GCM. We never see your master password.", NeonBlue),
+        OnboardingPage("Zero-Knowledge", "All your data is encrypted. We never see your master password.", NeonBlue),
         OnboardingPage("Decentralized Backup", "Backup your encrypted vault. No central servers, total ownership.", NeonPurple),
         OnboardingPage("SOL Integration", "Earn SOL for maintaining a secure vault and performing backups.", NeonBlue)
     )
@@ -75,6 +78,7 @@ fun OnboardingScreen(onFinished: () -> Unit) {
                     if (pagerState.currentPage < 2) {
                         scope.launch { pagerState.animateScrollToPage(pagerState.currentPage + 1) }
                     } else {
+                        viewModel?.setOnboardingCompleted()
                         onFinished()
                     }
                 },

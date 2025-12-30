@@ -1,5 +1,7 @@
 package io.vault.mobile.ui.viewmodel
 
+import android.content.Context
+import android.content.pm.PackageManager
 import androidx.compose.runtime.collectAsState
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -7,6 +9,7 @@ import io.vault.mobile.data.local.PreferenceManager
 import io.vault.mobile.data.local.entity.VaultEntry
 import io.vault.mobile.data.repository.VaultRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
+import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -16,13 +19,47 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
+data class AppInfo(
+    val name: String,
+    val packageName: String
+)
+
+enum class PasswordStrength {
+    Poor, Weak, Strong
+}
+
 @HiltViewModel
 class VaultViewModel @Inject constructor(
     private val repository: VaultRepository,
     private val preferenceManager: PreferenceManager,
     private val backupManager: io.vault.mobile.data.backup.BackupManager,
-    private val biometricAuthenticator: io.vault.mobile.security.BiometricAuthenticator
+    private val biometricAuthenticator: io.vault.mobile.security.BiometricAuthenticator,
+    @ApplicationContext private val context: Context
 ) : ViewModel() {
+
+    private val _installedApps = MutableStateFlow<List<AppInfo>>(emptyList())
+    val installedApps = _installedApps.asStateFlow()
+
+    init {
+        fetchInstalledApps()
+    }
+
+    private fun fetchInstalledApps() {
+        viewModelScope.launch {
+            val pm = context.packageManager
+            val intent = android.content.Intent(android.content.Intent.ACTION_MAIN, null)
+            intent.addCategory(android.content.Intent.CATEGORY_LAUNCHER)
+            
+            val apps = pm.queryIntentActivities(intent, 0).map { resolveInfo ->
+                AppInfo(
+                    name = resolveInfo.loadLabel(pm).toString(),
+                    packageName = resolveInfo.activityInfo.packageName
+                )
+            }.sortedBy { it.name }
+            
+            _installedApps.value = apps
+        }
+    }
 
     private val _backupCid = MutableStateFlow<String?>(null)
     val backupCid = _backupCid.asStateFlow()
@@ -131,6 +168,29 @@ class VaultViewModel @Inject constructor(
     fun toggleBiometric(enabled: Boolean) {
         viewModelScope.launch {
             preferenceManager.setBiometricEnabled(enabled)
+        }
+    }
+
+    fun setOnboardingCompleted() {
+        viewModelScope.launch {
+            preferenceManager.setOnboardingCompleted(true)
+        }
+    }
+
+    fun calculatePasswordStrength(password: String): PasswordStrength {
+        if (password.length < 8) return PasswordStrength.Poor
+        
+        val hasUpper = password.any { it.isUpperCase() }
+        val hasLower = password.any { it.isLowerCase() }
+        val hasDigit = password.any { it.isDigit() }
+        val hasSpecial = password.any { !it.isLetterOrDigit() }
+        
+        val score = listOf(hasUpper, hasLower, hasDigit, hasSpecial).count { it }
+        
+        return when {
+            password.length >= 12 && score >= 3 -> PasswordStrength.Strong
+            password.length >= 8 && score >= 2 -> PasswordStrength.Weak
+            else -> PasswordStrength.Poor
         }
     }
 }

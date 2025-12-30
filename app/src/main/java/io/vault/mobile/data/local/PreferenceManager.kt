@@ -22,6 +22,7 @@ class PreferenceManager @Inject constructor(
     private val AUTO_BACKUP_KEY = booleanPreferencesKey("auto_backup")
     private val AUTOFILL_ENABLED_KEY = booleanPreferencesKey("autofill_enabled")
     private val BIOMETRIC_ENABLED_KEY = booleanPreferencesKey("biometric_enabled")
+    private val ONBOARDING_COMPLETED_KEY = booleanPreferencesKey("onboarding_completed")
 
     val autoBackupEnabled: Flow<Boolean> = context.dataStore.data.map { preferences ->
         preferences[AUTO_BACKUP_KEY] ?: false
@@ -33,6 +34,10 @@ class PreferenceManager @Inject constructor(
 
     val biometricEnabled: Flow<Boolean> = context.dataStore.data.map { preferences ->
         preferences[BIOMETRIC_ENABLED_KEY] ?: false
+    }
+
+    val onboardingCompleted: Flow<Boolean> = context.dataStore.data.map { preferences ->
+        preferences[ONBOARDING_COMPLETED_KEY] ?: false
     }
 
     suspend fun setAutoBackupEnabled(enabled: Boolean) {
@@ -50,6 +55,12 @@ class PreferenceManager @Inject constructor(
     suspend fun setBiometricEnabled(enabled: Boolean) {
         context.dataStore.edit { preferences ->
             preferences[BIOMETRIC_ENABLED_KEY] = enabled
+        }
+    }
+
+    suspend fun setOnboardingCompleted(completed: Boolean) {
+        context.dataStore.edit { preferences ->
+            preferences[ONBOARDING_COMPLETED_KEY] = completed
         }
     }
 }

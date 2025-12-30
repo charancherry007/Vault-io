@@ -28,12 +28,13 @@ fun CyberTextField(
     isPassword: Boolean = false,
     singleLine: Boolean = true,
     enabled: Boolean = true,
-    placeholder: String? = null
+    placeholder: String? = null,
+    modifier: Modifier = Modifier
 ) {
     OutlinedTextField(
         value = value,
         onValueChange = onValueChange,
-        modifier = Modifier.fillMaxWidth(),
+        modifier = modifier.fillMaxWidth(),
         enabled = enabled,
         label = { Text(label, color = TextSecondary) },
         placeholder = placeholder?.let { { Text(it, color = TextSecondary.copy(alpha = 0.5f)) } },
