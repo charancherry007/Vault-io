@@ -21,6 +21,8 @@ import io.vault.mobile.ui.viewmodel.VaultViewModel
 import io.vault.mobile.ui.components.SettingItem
 import io.vault.mobile.ui.components.SettingToggleItem
 
+import io.vault.mobile.BuildConfig
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SettingsScreen(
@@ -101,7 +103,7 @@ fun SettingsScreen(
             Spacer(modifier = Modifier.weight(1f))
             
             Text(
-                "App Version: 0.7",
+                "App Version: ${BuildConfig.VERSION_NAME}",
                 color = TextSecondary,
                 fontSize = 12.sp,
                 modifier = Modifier.align(Alignment.CenterHorizontally)
