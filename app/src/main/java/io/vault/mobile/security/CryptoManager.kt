@@ -3,6 +3,7 @@ package io.vault.mobile.security
 import androidx.biometric.BiometricPrompt
 import android.security.keystore.KeyGenParameterSpec
 import android.security.keystore.KeyProperties
+import android.security.keystore.KeyProtection
 import java.security.KeyStore
 import javax.crypto.Cipher
 import javax.crypto.KeyGenerator
@@ -24,25 +25,30 @@ object CryptoManager {
         load(null)
     }
 
-    private fun getSecretKey(): SecretKey {
-        val existingKey = keyStore.getEntry(KEY_ALIAS, null) as? KeyStore.SecretKeyEntry
-        return existingKey?.secretKey ?: createKey()
+    fun hasMasterKey(): Boolean {
+        return keyStore.containsAlias(KEY_ALIAS)
     }
 
-    private fun createKey(): SecretKey {
-        return KeyGenerator.getInstance(ALGORITHM, "AndroidKeyStore").apply {
-            init(
-                KeyGenParameterSpec.Builder(
-                    KEY_ALIAS,
-                    KeyProperties.PURPOSE_ENCRYPT or KeyProperties.PURPOSE_DECRYPT
-                )
-                    .setBlockModes(BLOCK_MODE)
-                    .setEncryptionPaddings(PADDING)
-                    .setUserAuthenticationRequired(false) // Will be handled by Biometrics separately for higher flexibility
-                    .setRandomizedEncryptionRequired(true)
-                    .build()
-            )
-        }.generateKey()
+    private fun getSecretKey(): SecretKey {
+        val existingKey = keyStore.getEntry(KEY_ALIAS, null) as? KeyStore.SecretKeyEntry
+        return existingKey?.secretKey ?: throw IllegalStateException("Master Key not initialized. Please create or restore it first.")
+    }
+
+    fun importMasterKey(keyBytes: ByteArray) {
+        val secretKey = SecretKeySpec(keyBytes, ALGORITHM)
+        keyStore.setEntry(
+            KEY_ALIAS,
+            KeyStore.SecretKeyEntry(secretKey),
+            KeyProtection.Builder(KeyProperties.PURPOSE_ENCRYPT or KeyProperties.PURPOSE_DECRYPT)
+                .setBlockModes(BLOCK_MODE)
+                .setEncryptionPaddings(PADDING)
+                .setUserAuthenticationRequired(false)
+                .build()
+        )
+    }
+
+    fun deleteMasterKey() {
+        keyStore.deleteEntry(KEY_ALIAS)
     }
 
     private fun getBiometricKey(): SecretKey {

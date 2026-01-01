@@ -42,10 +42,21 @@ class BiometricAuthenticator(private val context: Context) {
                 }
             })
 
+        val allowedAuthenticators = if (cryptoObject != null) {
+            BiometricManager.Authenticators.BIOMETRIC_STRONG
+        } else {
+            BiometricManager.Authenticators.BIOMETRIC_STRONG or BiometricManager.Authenticators.DEVICE_CREDENTIAL
+        }
+
         val promptInfo = BiometricPrompt.PromptInfo.Builder()
             .setTitle(title)
             .setSubtitle(subtitle)
-            .setAllowedAuthenticators(BiometricManager.Authenticators.BIOMETRIC_STRONG or BiometricManager.Authenticators.DEVICE_CREDENTIAL)
+            .setAllowedAuthenticators(allowedAuthenticators)
+            .apply {
+                if (cryptoObject != null) {
+                    setNegativeButtonText("Cancel")
+                }
+            }
             .build()
 
         if (cryptoObject != null) {

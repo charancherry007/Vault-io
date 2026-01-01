@@ -17,14 +17,8 @@ object NetworkModule {
     @Singleton
     fun provideRetrofit(): Retrofit {
         return Retrofit.Builder()
-            .baseUrl("https://api.pinata.cloud/")
+            .baseUrl("https://api.vault-io.dummy/") // Placeholder since Pinata is gone
             .addConverterFactory(GsonConverterFactory.create())
             .build()
-    }
-
-    @Provides
-    @Singleton
-    fun providePinataApi(retrofit: Retrofit): PinataApi {
-        return retrofit.create(PinataApi::class.java)
     }
 }

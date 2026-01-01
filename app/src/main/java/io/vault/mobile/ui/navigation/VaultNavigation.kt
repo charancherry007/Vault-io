@@ -15,8 +15,7 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
-import io.vault.mobile.blockchain.IWalletManager
-import io.vault.mobile.blockchain.RewardManager
+
 import io.vault.mobile.data.local.PreferenceManager
 import io.vault.mobile.ui.screens.*
 import io.vault.mobile.ui.theme.NeonBlue
@@ -24,17 +23,14 @@ import io.vault.mobile.ui.viewmodel.VaultViewModel
 
 sealed class Screen(val route: String, val title: String, val icon: ImageVector) {
     object VaultList : Screen("vault_list", "Vault", Icons.Default.Shield)
-    object Rewards : Screen("rewards", "Rewards", Icons.Default.AccountBalanceWallet)
+    object MediaVault : Screen("media_vault", "Media", Icons.Default.PhotoLibrary)
     object Settings : Screen("settings", "Settings", Icons.Default.Settings)
     object AddPassword : Screen("add_password", "Add", Icons.Default.Add)
     object Backup : Screen("backup", "Backup", Icons.Default.CloudUpload)
 }
 
 @Composable
-fun VaultNavigation(
-    walletManager: IWalletManager,
-    rewardManager: RewardManager
-) {
+fun VaultNavigation() {
     val navController = rememberNavController()
     val viewModel: VaultViewModel = hiltViewModel()
     val navBackStackEntry by navController.currentBackStackEntryAsState()
@@ -42,7 +38,7 @@ fun VaultNavigation(
 
     val bottomNavItems = listOf(
         Screen.VaultList,
-        Screen.Rewards,
+        Screen.MediaVault,
         Screen.Settings
     )
 
@@ -104,23 +100,8 @@ fun VaultNavigation(
                     onNavigateBack = { navController.popBackStack() }
                 )
             }
-            composable(Screen.Rewards.route) {
-                if (walletManager.isLoggedIn()) {
-                    RewardsScreen(
-                        walletManager = walletManager,
-                        rewardManager = rewardManager
-                    )
-                } else {
-                    ConnectWalletScreen(
-                        walletManager = walletManager,
-                        onWalletLinked = {
-                            navController.navigate(Screen.Rewards.route) {
-                                popUpTo(Screen.VaultList.route)
-                                launchSingleTop = true
-                            }
-                        }
-                    )
-                }
+            composable(Screen.MediaVault.route) {
+                MediaVaultScreen()
             }
             composable(Screen.Settings.route) {
                 SettingsScreen(

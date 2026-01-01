@@ -1,59 +1,82 @@
-# Vault Android App
+# Vault Android 🔒
 
-Secure, decentralized password manager for Android with blockchain-based rewards and IPFS cloud backups.
+Vault is a privacy-first, secure mobile application designed for local-first storage and decentralized cloud recovery. It provides a robust virtual environment for managing sensitive passwords and media, ensuring that your data remains entirely within your control.
+
+## 🎯 Project Objective
+
+The primary objective of Vault is to bridge the gap between high-security hardware-backed encryption and convenient cloud availability. 
+
+Vault aims to provide:
+- **Zero-Knowledge Privacy**: Your data is encrypted locally using the industrial-standard AES-256-GCM.
+- **Hardware Security**: Core keys are stored in the hardware-backed Android Keystore, inaccessible to other apps.
+- **Scalable Backups**: A "Virtual Vault" system for media that allows for efficient, blob-based cloud synchronization via Google Drive's hidden App Data folder.
+- **Biometric Armor**: Integrated fingerprint and face unlock that directly interacts with the secure encryption context.
+
+---
 
 ## 🏗 Architecture Overview
 
-The app follows the **MVVM (Model-View-ViewModel)** architectural pattern with a clear separation of concerns, utilizing Jetpack Compose for the UI layer and Hilt for dependency injection.
+Vault follows an **MVVM (Model-View-ViewModel)** architectural pattern. The system is designed to isolate sensitive cryptographic operations from the UI while maintaining a reactive, modern user experience.
 
-![Vault App Architecture](docs/images/architecture_diagram.png)
+### Technical Stack
+- **UI & UX**: Jetpack Compose (Modern, Reactive UI)
+- **Dependency Injection**: Hilt (Dagger-based DI)
+- **Local Database**: Room with SQLCipher (Encrypted SQLite)
+- **Cloud Backend**: Google Drive API (App Data storage)
+- **Security**: Android Keystore, Biometric Prompt API, PBKDF2 Key Derivation.
 
-## 🚀 Setup Instructions
+### Architecture Diagram
+![Vault Architecture](docs/images/architecture_diagram.png)
 
-Follow these steps to initialize and run the project locally:
+### System Workflow (Mermaid)
+```mermaid
+graph TD
+    UI[Jetpack Compose UI] --> VM[ViewModels]
+    VM --> CS[CryptoService / MasterKeyManager]
+    VM --> DB[(Encrypted Room DB)]
+    VM --> GD[Google Drive AppData]
+    CS --> AK[Android Keystore]
+    GD -.-> Manifest[Media Manifest JSON]
+    GD -.-> Blobs[Encrypted Media Blobs]
+```
 
-1.  **Prerequisites**:
-    *   **Android Studio**: Iguana (2023.2.1) or later recommended.
-    *   **JDK**: Version 17 or higher.
-    *   **Android SDK**: API level 26 (Android 8.0) or higher.
+---
 
-2.  **Clone the Repository**:
-    ```bash
-    git clone https://github.com/your-repo/vault-android-app.git
-    cd vault-android-app
-    ```
+## 🚶 Feature Walkthrough
 
-3.  **API Keys Configuration**:
-    *   Open `app/src/main/java/io/vault/mobile/data/remote/PinataApi.kt` and ensure the base URL is correct.
-    *   Provide your Pinata JWT token or API keys (standard practice is to use `local.properties` or `BuildConfig`, but ensure the `BackupRepository` is correctly configured).
+### 1. Hybrid Master Key Security
+Vault uses a unique two-factor setup logic. On first launch, you create a **Master Password**. The app derives a local hardware key and stores a securely encrypted recovery blob on your Google Drive. This ensures that even if you lose your phone, your vault is recoverable as long as you remember your password.
 
-4.  **Firebase Setup** (Optional):
-    *   Place your `google-services.json` in the `app/` directory if you plan to use Firebase services (not required for core functionality).
+### 2. Media Virtual Vault
+Unlike primitive backup systems, Vault uses a **Manifest-based system**. Every photo and video is stored as an individual encrypted blob. The `media_manifest.enc` tracks all files. 
+- **Efficiency**: Only changed files are uploaded.
+- **Privacy**: File names and metadata are hidden inside the encrypted manifest.
 
-5.  **Build & Run**:
-    *   Open the project in Android Studio.
-    *   Sync Gradle and click the **Run** button.
-    *   Select a physical device or emulator (API 26+).
+### 3. Biometric Integration
+Security doesn't have to be a chore. Vault integrates the Biometric Prompt API such that a successful fingerprint scan can unlock the cryptographic context for the entire application session.
 
-## 🧩 Key Component Walkthrough
+### 4. Zero-Knowledge "Nuke" Flow
+Forgotten your password? To maintain a zero-knowledge architecture, Vault does not store your password on any server. If lost, you can initiate a **Full Reset**. This flow securely wipes both your local device and your private Google Drive App Data folder, ensuring a fresh start with zero stale data.
 
-### 🔒 Security & Data
-*   **[CryptoManager](file:///d:/Anti%20Gravity%20Projects/Vault%20Android%20app/app/src/main/java/io/vault/mobile/security/CryptoManager.kt)**: Handles AES-256-GCM encryption/decryption of sensitive password data using the Android KeyStore.
-*   **[BiometricAuthenticator](file:///d:/Anti%20Gravity%20Projects/Vault%20Android%20app/app/src/main/java/io/vault/mobile/security/BiometricAuthenticator.kt)**: Manages fingerprint and face unlock prompts for secure access.
-*   **[AppDatabase](file:///d:/Anti%20Gravity%20Projects/Vault%20Android%20app/app/src/main/java/io/vault/mobile/data/local/AppDatabase.kt)**: Uses Room with **SQLCipher** for encrypted local storage.
+---
 
-### 🌐 Cloud & Blockchain
-*   **[BackupManager](file:///d:/Anti%20Gravity%20Projects/Vault%20Android%20app/app/src/main/java/io/vault/mobile/data/backup/BackupManager.kt)**: Orchestrates the process of encrypting data and uploading it to **IPFS** via the Pinata API.
-*   **[RewardManager](file:///d:/Anti%20Gravity%20Projects/Vault%20Android%20app/app/src/main/java/io/vault/mobile/blockchain/RewardManager.kt)**: Integrates with the Pi Network to reward users for maintaining their vault.
+## 🚀 Getting Started
 
-### 📱 UI Layer
-*   **[VaultNavigation](file:///d:/Anti%20Gravity%20Projects/Vault%20Android%20app/app/src/main/java/io/vault/mobile/ui/navigation/VaultNavigation.kt)**: Manages the Composable-based navigation graph for the app.
-*   **[VaultViewModel](file:///d:/Anti%20Gravity%20Projects/Vault%20Android%20app/app/src/main/java/io/vault/mobile/ui/viewmodel/VaultViewModel.kt)**: The central hub for state management, connecting UI screens with underlying data and security services.
+### Prerequisites
+- **Android Studio** (Ladybug or newer recommended)
+- **JDK 17+**
+- **Android SDK 26+**
 
-## ✨ Features
+### Local Setup
+1. Clone the repository.
+2. Open in Android Studio.
+3. Configure your `local.properties` or standard Google Services if using additional cloud features.
+4. Build and Run on a physical device to test biometric features.
 
-*   **AES-256-GCM** encryption for all passwords.
-*   **Pi Network** blockchain rewards system.
-*   **IPFS** decentralized backup via Pinata.
-*   **Jetpack Compose** futuristic, neon-themed UI.
-*   **Auto-lock** and Biometric authentication.
+---
+
+## 🧪 Verification & Stability
+The project has undergone rigorous testing for:
+- **Decryption Integrity**: Verified stable through multiple reset-and-restore cycles.
+- **Cloud Consistency**: Instant synchronization of backup status icons.
+- **UI Performance**: Smooth grid rendering even with large media manifests.

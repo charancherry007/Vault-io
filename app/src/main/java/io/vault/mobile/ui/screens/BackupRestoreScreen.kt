@@ -22,6 +22,15 @@ import io.vault.mobile.ui.theme.NeonPurple
 import io.vault.mobile.ui.theme.TextSecondary
 import io.vault.mobile.ui.viewmodel.VaultViewModel
 import io.vault.mobile.ui.components.CyberTextField
+import android.widget.Toast
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import com.google.android.gms.common.api.ApiException
+import com.google.android.gms.auth.api.signin.GoogleSignIn
+import com.google.android.gms.auth.api.signin.GoogleSignInOptions
+import com.google.android.gms.common.api.Scope
+import com.google.api.services.drive.DriveScopes
+import androidx.compose.ui.platform.LocalContext
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -29,15 +38,44 @@ fun BackupRestoreScreen(
     viewModel: VaultViewModel,
     onNavigateBack: () -> Unit
 ) {
-    val backupCid by viewModel.backupCid.collectAsState()
+    val isConnectedToDrive by viewModel.isConnectedToDrive.collectAsState()
     val isSyncing by viewModel.isSyncing.collectAsState()
     val syncError by viewModel.syncError.collectAsState()
+    val remoteKeyExists by viewModel.remoteKeyExists.collectAsState()
 
-    var inputCid by remember { mutableStateOf("") }
     var masterPassword by remember { mutableStateOf("") }
-    val clipboardManager = LocalClipboardManager.current
+    var showPasswordDialog by remember { mutableStateOf(false) }
+    var resetDialogStage by remember { mutableStateOf<BackupResetStage?>(null) }
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
+    val context = LocalContext.current
+    
+    LaunchedEffect(Unit) {
+        viewModel.checkDriveConnection()
+    }
+
+    val googleSignInLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        val task = GoogleSignIn.getSignedInAccountFromIntent(result.data)
+        try {
+            val account = task.getResult(ApiException::class.java)
+            if (account != null) {
+                viewModel.onDriveConnected()
+                Toast.makeText(context, "Connected to Google Drive successfully", Toast.LENGTH_SHORT).show()
+            }
+        } catch (e: ApiException) {
+            Toast.makeText(context, "Connection failed: ${e.statusCode}", Toast.LENGTH_LONG).show()
+        } catch (e: Exception) {
+            Toast.makeText(context, "Unexpected error: ${e.message}", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    val signInOptions = GoogleSignInOptions.Builder(GoogleSignInOptions.DEFAULT_SIGN_IN)
+        .requestEmail()
+        .requestScopes(Scope(DriveScopes.DRIVE_FILE), Scope(DriveScopes.DRIVE_APPDATA))
+        .build()
+    val googleSignInClient = remember { GoogleSignIn.getClient(context, signInOptions) }
 
     Scaffold(
         topBar = {
@@ -70,7 +108,7 @@ fun BackupRestoreScreen(
             )
 
             Text(
-                "DECENTRALIZED VAULT SYNC",
+                "GOOGLE DRIVE VAULT SYNC",
                 color = Color.White,
                 fontWeight = FontWeight.Black,
                 fontSize = 20.sp,
@@ -78,7 +116,7 @@ fun BackupRestoreScreen(
             )
 
             Text(
-                "Securely sync your encrypted vault or restore from an existing UID.",
+                "Securely sync your encrypted vault or restore from your Google Drive account.",
                 color = TextSecondary,
                 textAlign = TextAlign.Center,
                 fontSize = 14.sp
@@ -86,111 +124,220 @@ fun BackupRestoreScreen(
 
             Divider(color = Color.DarkGray, thickness = 1.dp)
 
-            // MASTER PASSWORD SECTION (GLOBAL FOR BOTH SYNC/RESTORE)
-            Column(modifier = Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text("MASTER PASSWORD", color = NeonBlue, fontWeight = FontWeight.Bold, fontSize = 12.sp)
-                CyberTextField(
-                    value = masterPassword,
-                    onValueChange = { masterPassword = it },
-                    label = "Vault Master Password",
-                    isPassword = true,
-                    placeholder = "Used to encrypt/decrypt cloud data"
-                )
-            }
-
-            Divider(color = Color.DarkGray.copy(alpha = 0.5f), thickness = 0.5.dp)
-
-            // RESTORE SECTION
-            Column(modifier = Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text("RESTORE FROM Cloud", color = NeonPurple, fontWeight = FontWeight.Bold, fontSize = 12.sp)
-                OutlinedTextField(
-                    value = inputCid,
-                    onValueChange = { inputCid = it },
-                    modifier = Modifier.fillMaxWidth(),
-                    placeholder = { Text("Enter Backup UID", color = Color.Gray) },
+            if (!isConnectedToDrive) {
+                Surface(
+                    color = Color(0xFF1A1C23),
                     shape = RoundedCornerShape(12.dp),
-                    colors = TextFieldDefaults.outlinedTextFieldColors(
-                        focusedBorderColor = NeonPurple,
-                        unfocusedBorderColor = Color.DarkGray,
-                        focusedTextColor = Color.White,
-                        unfocusedTextColor = Color.White
-                    )
-                )
-                Button(
-                    onClick = { viewModel.restoreFromCloud(inputCid, masterPassword) { onNavigateBack() } },
-                    modifier = Modifier.fillMaxWidth(),
-                    enabled = inputCid.isNotBlank() && masterPassword.isNotBlank() && !isSyncing,
-                    colors = ButtonDefaults.buttonColors(containerColor = NeonPurple),
-                    shape = RoundedCornerShape(12.dp)
+                    border = androidx.compose.foundation.BorderStroke(1.dp, NeonBlue.copy(alpha = 0.5f)),
+                    modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
                 ) {
-                    if (isSyncing) CircularProgressIndicator(color = Color.White, modifier = Modifier.size(24.dp))
-                    else Text("RESTORE VAULT", fontWeight = FontWeight.Bold)
-                }
-            }
-
-            Spacer(modifier = Modifier.height(12.dp))
-
-            // BACKUP SECTION
-            Column(modifier = Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text("CREATE NEW BACKUP", color = NeonBlue, fontWeight = FontWeight.Bold, fontSize = 12.sp)
-                Button(
-                    onClick = { viewModel.syncToCloud(masterPassword) },
-                    modifier = Modifier.fillMaxWidth(),
-                    enabled = masterPassword.isNotBlank() && !isSyncing,
-                    colors = ButtonDefaults.buttonColors(containerColor = NeonBlue),
-                    shape = RoundedCornerShape(12.dp)
-                ) {
-                    if (isSyncing) CircularProgressIndicator(color = Color.Black, modifier = Modifier.size(24.dp))
-                    else Text("SYNC NOW", color = Color.Black, fontWeight = FontWeight.Bold)
-                }
-
-                backupCid?.let { cid ->
-                    Surface(
-                        color = Color(0xFF1A1C23),
-                        shape = RoundedCornerShape(12.dp),
-                        border = androidx.compose.foundation.BorderStroke(1.dp, NeonBlue.copy(alpha = 0.5f)),
-                        modifier = Modifier.padding(top = 16.dp)
+                    Column(
+                        modifier = Modifier.padding(16.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
                     ) {
-                        Column(modifier = Modifier.padding(16.dp)) {
-                            Text("BACKUP SUCCESSFUL!", color = NeonBlue, fontWeight = FontWeight.Bold)
-                            Text("Your UID (Save this securely):", color = TextSecondary, fontSize = 12.sp)
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                modifier = Modifier.padding(top = 4.dp)
-                            ) {
-                                Text(
-                                    cid,
-                                    color = Color.White,
-                                    fontWeight = FontWeight.Bold,
-                                    fontSize = 14.sp,
-                                    modifier = Modifier.weight(1f)
-                                )
-                                IconButton(
-                                    onClick = {
-                                        clipboardManager.setText(AnnotatedString(cid))
-                                        scope.launch {
-                                            snackbarHostState.showSnackbar("UID copied to clipboard")
-                                        }
-                                    },
-                                    modifier = Modifier.size(24.dp)
-                                ) {
-                                    Icon(
-                                        Icons.Default.ContentCopy,
-                                        contentDescription = "Copy UID",
-                                        tint = NeonBlue,
-                                        modifier = Modifier.size(16.dp)
-                                    )
-                                }
-                            }
+                        Text(
+                            "DRIVE DISCONNECTED", 
+                            color = NeonBlue, 
+                            fontWeight = FontWeight.Bold,
+                            textAlign = TextAlign.Center
+                        )
+                        Spacer(modifier = Modifier.height(16.dp))
+                        Button(
+                            onClick = { googleSignInLauncher.launch(googleSignInClient.signInIntent) },
+                            colors = ButtonDefaults.buttonColors(containerColor = NeonBlue),
+                            shape = RoundedCornerShape(8.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text("CONNECT TO DRIVE", fontWeight = FontWeight.Bold, color = Color.Black)
                         }
                     }
                 }
+            } else {
+                // MASTER PASSWORD SECTION
+                Column(modifier = Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("MASTER PASSWORD", color = NeonBlue, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                    CyberTextField(
+                        value = masterPassword,
+                        onValueChange = { masterPassword = it },
+                        label = "Vault Master Password",
+                        isPassword = true,
+                        placeholder = "Used to encrypt/decrypt cloud data"
+                    )
+                }
+
+                Divider(color = Color.DarkGray.copy(alpha = 0.5f), thickness = 0.5.dp)
+
+                // SYNC & RESTORE BUTTONS
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(16.dp)
+                ) {
+                    Button(
+                        onClick = { viewModel.syncToCloud(masterPassword) },
+                        modifier = Modifier.weight(1f),
+                        enabled = masterPassword.isNotBlank() && !isSyncing,
+                        colors = ButtonDefaults.buttonColors(containerColor = NeonBlue),
+                        shape = RoundedCornerShape(12.dp)
+                    ) {
+                        if (isSyncing) CircularProgressIndicator(color = Color.Black, modifier = Modifier.size(20.dp))
+                        else Text("SYNC NOW", color = Color.Black, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                    }
+
+                    Button(
+                        onClick = { 
+                            if (remoteKeyExists) {
+                                showPasswordDialog = true 
+                            } else {
+                                viewModel.validateAndRestoreCloudBackup(masterPassword) { onNavigateBack() }
+                            }
+                        },
+                        modifier = Modifier.weight(1f),
+                        enabled = masterPassword.isNotBlank() && !isSyncing,
+                        colors = ButtonDefaults.buttonColors(containerColor = NeonPurple),
+                        shape = RoundedCornerShape(12.dp)
+                    ) {
+                        if (isSyncing) CircularProgressIndicator(color = Color.White, modifier = Modifier.size(20.dp))
+                        else Text("RESTORE", fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                    }
+                }
+
+                if (remoteKeyExists) {
+                    Text(
+                        "☁️ Master Key backup found on Drive. Verification required for restore.",
+                        color = NeonBlue.copy(alpha = 0.8f),
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold,
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier.padding(top = 8.dp)
+                    )
+                }
             }
 
-            syncError?.let { error ->
-                Text(error, color = Color.Red, fontSize = 12.sp, textAlign = TextAlign.Center)
+            if (showPasswordDialog) {
+                AlertDialog(
+                    onDismissRequest = { showPasswordDialog = false },
+                    title = { Text("Verify Master Password", color = NeonBlue) },
+                    text = {
+                        Column {
+                            Text("Please enter your Master Password to verify identity before restoring data.", fontSize = 14.sp)
+                            Spacer(modifier = Modifier.height(16.dp))
+                            CyberTextField(
+                                value = masterPassword,
+                                onValueChange = { masterPassword = it },
+                                label = "Master Password",
+                                isPassword = true
+                            )
+                        }
+                    },
+                    confirmButton = {
+                        Button(
+                            onClick = {
+                                showPasswordDialog = false
+                                viewModel.validateAndRestoreCloudBackup(masterPassword) { onNavigateBack() }
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = NeonBlue)
+                        ) {
+                            Text("VERIFY & RESTORE", color = Color.Black)
+                        }
+                    },
+                    dismissButton = {
+                        TextButton(onClick = { showPasswordDialog = false }) {
+                            Text("CANCEL", color = Color.Gray)
+                        }
+                    },
+                    containerColor = Color(0xFF1A1C23),
+                    shape = RoundedCornerShape(16.dp)
+                )
+            }
+
+            syncError?.let { errorMsg: String ->
+                Text(text = errorMsg, color = Color.Red, fontSize = 12.sp, textAlign = TextAlign.Center)
+            }
+
+            if (isConnectedToDrive) {
+                Spacer(modifier = Modifier.height(8.dp))
+                TextButton(
+                    onClick = { resetDialogStage = BackupResetStage.Warning },
+                    enabled = !isSyncing
+                ) {
+                    Text(
+                        "Forgot Master Key? Reset Vault",
+                        color = Color.Gray,
+                        fontSize = 12.sp,
+                        textAlign = TextAlign.Center
+                    )
+                }
             }
         }
     }
+
+    // RESET FLOW DIALOGS (Same logic as MasterKeyScreen)
+    resetDialogStage?.let { stage ->
+        AlertDialog(
+            onDismissRequest = { resetDialogStage = null },
+            title = { 
+                Text(
+                    when (stage) {
+                        BackupResetStage.Warning -> "Reset Vault?"
+                        BackupResetStage.CloudCheck -> "Wipe Cloud Backups?"
+                        BackupResetStage.FinalConfirmation -> "PERMANENT DATA WIPE"
+                    },
+                    color = if (stage == BackupResetStage.FinalConfirmation) Color.Red else NeonBlue,
+                    fontWeight = FontWeight.Bold
+                )
+            },
+            text = {
+                Text(
+                    when (stage) {
+                        BackupResetStage.Warning -> "If you forgot your password, the only way to regain access is to perform a full reset. This will delete all your local passwords and media."
+                        BackupResetStage.CloudCheck -> "This reset will also attempt to permenantly delete all encrypted backups from your Google Drive account."
+                        BackupResetStage.FinalConfirmation -> "This action will permanently delete all backups and cannot be undone. Are you absolutely sure you want to proceed?"
+                    },
+                    fontSize = 14.sp,
+                    color = Color.White
+                )
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        when (stage) {
+                            BackupResetStage.Warning -> resetDialogStage = BackupResetStage.CloudCheck
+                            BackupResetStage.CloudCheck -> resetDialogStage = BackupResetStage.FinalConfirmation
+                            BackupResetStage.FinalConfirmation -> {
+                                resetDialogStage = null
+                                viewModel.factoryReset {
+                                    onNavigateBack() // Go back to splash/main to trigger MK setup
+                                }
+                            }
+                        }
+                    },
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = if (stage == BackupResetStage.FinalConfirmation) Color.Red else NeonBlue
+                    )
+                ) {
+                    Text(
+                        when (stage) {
+                            BackupResetStage.Warning -> "CONTINUE"
+                            BackupResetStage.CloudCheck -> "I UNDERSTAND"
+                            BackupResetStage.FinalConfirmation -> "DELETE EVERYTHING"
+                        },
+                        color = Color.Black,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { resetDialogStage = null }) {
+                    Text("CANCEL", color = Color.Gray)
+                }
+            },
+            containerColor = Color(0xFF1A1C23),
+            shape = RoundedCornerShape(16.dp)
+        )
+    }
+}
+
+private enum class BackupResetStage {
+    Warning, CloudCheck, FinalConfirmation
 }
 

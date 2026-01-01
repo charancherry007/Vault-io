@@ -4,7 +4,7 @@ import android.content.Context
 import androidx.room.Room
 import io.vault.mobile.data.local.AppDatabase
 import io.vault.mobile.data.local.dao.VaultDao
-import io.vault.mobile.data.local.dao.RewardDao
+
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
@@ -41,8 +41,5 @@ object DataModule {
         return database.vaultDao()
     }
 
-    @Provides
-    fun provideRewardDao(database: AppDatabase): RewardDao {
-        return database.rewardDao()
-    }
+
 }

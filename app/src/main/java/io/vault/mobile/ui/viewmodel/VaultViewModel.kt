@@ -2,12 +2,13 @@ package io.vault.mobile.ui.viewmodel
 
 import android.content.Context
 import android.content.pm.PackageManager
-import androidx.compose.runtime.collectAsState
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import io.vault.mobile.data.local.PreferenceManager
 import io.vault.mobile.data.local.entity.VaultEntry
 import io.vault.mobile.data.repository.VaultRepository
+import io.vault.mobile.data.backup.BackupManager
+import io.vault.mobile.security.BiometricAuthenticator
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -32,16 +33,55 @@ enum class PasswordStrength {
 class VaultViewModel @Inject constructor(
     private val repository: VaultRepository,
     private val preferenceManager: PreferenceManager,
-    private val backupManager: io.vault.mobile.data.backup.BackupManager,
-    private val biometricAuthenticator: io.vault.mobile.security.BiometricAuthenticator,
+    private val backupManager: BackupManager,
+    private val driveManager: io.vault.mobile.data.cloud.GoogleDriveManager,
+    private val biometricAuthenticator: BiometricAuthenticator,
+    private val masterKeyManager: io.vault.mobile.security.MasterKeyManager,
     @ApplicationContext private val context: Context
 ) : ViewModel() {
 
     private val _installedApps = MutableStateFlow<List<AppInfo>>(emptyList())
-    val installedApps = _installedApps.asStateFlow()
+    val installedApps: StateFlow<List<AppInfo>> = _installedApps.asStateFlow()
+
+    private val _isConnectedToDrive = MutableStateFlow(false)
+    val isConnectedToDrive: StateFlow<Boolean> = _isConnectedToDrive.asStateFlow()
+
+    private val _isSyncing = MutableStateFlow(false)
+    val isSyncing: StateFlow<Boolean> = _isSyncing.asStateFlow()
+
+    private val _syncError = MutableStateFlow<String?>(null)
+    val syncError: StateFlow<String?> = _syncError.asStateFlow()
+
+    private val _remoteKeyExists = MutableStateFlow(false)
+    val remoteKeyExists: StateFlow<Boolean> = _remoteKeyExists.asStateFlow()
 
     init {
         fetchInstalledApps()
+        attemptAutoConnect()
+    }
+
+    private fun attemptAutoConnect() {
+        viewModelScope.launch {
+            val success = driveManager.silentSignIn()
+            if (success) {
+                checkDriveConnection()
+            }
+        }
+    }
+
+    fun onDriveConnected() {
+        checkDriveConnection()
+    }
+
+    fun checkDriveConnection() {
+        viewModelScope.launch {
+            _isConnectedToDrive.value = driveManager.isConnected()
+            if (_isConnectedToDrive.value) {
+                _remoteKeyExists.value = masterKeyManager.hasRemoteMasterKey()
+            } else {
+                _remoteKeyExists.value = false
+            }
+        }
     }
 
     private fun fetchInstalledApps() {
@@ -61,38 +101,45 @@ class VaultViewModel @Inject constructor(
         }
     }
 
-    private val _backupCid = MutableStateFlow<String?>(null)
-    val backupCid = _backupCid.asStateFlow()
-
-    private val _isSyncing = MutableStateFlow(false)
-    val isSyncing = _isSyncing.asStateFlow()
-
-    private val _syncError = MutableStateFlow<String?>(null)
-    val syncError = _syncError.asStateFlow()
-
     fun syncToCloud(password: String) {
         viewModelScope.launch {
             _isSyncing.value = true
             _syncError.value = null
-            val cid = backupManager.createBackup(password)
-            if (cid != null) {
-                _backupCid.value = cid
-            } else {
-                _syncError.value = "Failed to sync to IPFS. Check connection."
+            val success = backupManager.createBackup(password)
+            if (!success) {
+                _syncError.value = "Failed to sync to Google Drive. Check connection."
             }
             _isSyncing.value = false
         }
     }
 
-    fun restoreFromCloud(cid: String, password: String, onSuccess: () -> Unit) {
+    fun validateAndRestoreCloudBackup(password: String, onSuccess: () -> Unit) {
         viewModelScope.launch {
             _isSyncing.value = true
             _syncError.value = null
-            val success = backupManager.restoreBackup(cid, password)
-            if (success) {
-                onSuccess()
-            } else {
-                _syncError.value = "Failed to restore. Invalid CID/Password or network error."
+            
+            // Feature 3: Strictly verify password against Master Key before restoring any data
+            val validation = masterKeyManager.downloadAndVerifyPassword(password)
+            
+            when (validation) {
+                is io.vault.mobile.security.MasterKeyValidationResult.Success -> {
+                    // Password matches the remote encrypted key! Proceed with data restore.
+                    val success = backupManager.restoreBackup(password)
+                    if (success) {
+                        onSuccess()
+                    } else {
+                        _syncError.value = "Failed to restore data. Backup might be corrupted."
+                    }
+                }
+                is io.vault.mobile.security.MasterKeyValidationResult.InvalidPassword -> {
+                    _syncError.value = "Master key does not match. Restore denied."
+                }
+                is io.vault.mobile.security.MasterKeyValidationResult.NoRemoteKey -> {
+                    _syncError.value = "No master key found on Google Drive."
+                }
+                else -> {
+                    _syncError.value = "Verification failed. Check your connection."
+                }
             }
             _isSyncing.value = false
         }
@@ -174,6 +221,21 @@ class VaultViewModel @Inject constructor(
     fun setOnboardingCompleted() {
         viewModelScope.launch {
             preferenceManager.setOnboardingCompleted(true)
+        }
+    }
+
+    fun factoryReset(onComplete: () -> Unit) {
+        viewModelScope.launch {
+            _isSyncing.value = true
+            _syncError.value = null
+            val success = masterKeyManager.performFactoryReset()
+            _isSyncing.value = false
+            if (success) {
+                onComplete()
+            } else {
+                _syncError.value = "Local reset completed, but failed to wipe some data on Google Drive."
+                onComplete()
+            }
         }
     }
 

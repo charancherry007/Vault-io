@@ -33,7 +33,7 @@ fun OnboardingScreen(
     val pages = listOf(
         OnboardingPage("Zero-Knowledge", "All your data is encrypted. We never see your master password.", NeonBlue),
         OnboardingPage("Decentralized Backup", "Backup your encrypted vault. No central servers, total ownership.", NeonPurple),
-        OnboardingPage("SOL Integration", "Earn SOL for maintaining a secure vault and performing backups.", NeonBlue)
+        OnboardingPage("Private Media Vault", "Securely encrypt and backup your photos and videos to Google Drive.", NeonBlue)
     )
 
     Column(modifier = Modifier.fillMaxSize().background(Color.Black)) {
