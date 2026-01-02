@@ -15,6 +15,9 @@ interface VaultDao {
     @Query("SELECT * FROM vault_entries ORDER BY appName ASC")
     fun getAllEntries(): Flow<List<VaultEntry>>
 
+    @Query("SELECT * FROM vault_entries")
+    suspend fun getAllEntriesOneShot(): List<VaultEntry>
+
     @Query("SELECT * FROM vault_entries WHERE appName LIKE '%' || :query || '%'")
     fun searchEntries(query: String): Flow<List<VaultEntry>>
 

@@ -10,6 +10,7 @@ class BiometricAuthenticator(private val context: Context) {
 
     fun isBiometricAvailable(): Boolean {
         val biometricManager = BiometricManager.from(context)
+        // Strictly require BIOMETRIC_STRONG OR DEVICE_CREDENTIAL (fallback)
         return biometricManager.canAuthenticate(
             BiometricManager.Authenticators.BIOMETRIC_STRONG or BiometricManager.Authenticators.DEVICE_CREDENTIAL
         ) == BiometricManager.BIOMETRIC_SUCCESS
@@ -28,17 +29,20 @@ class BiometricAuthenticator(private val context: Context) {
             object : BiometricPrompt.AuthenticationCallback() {
                 override fun onAuthenticationSucceeded(result: BiometricPrompt.AuthenticationResult) {
                     super.onAuthenticationSucceeded(result)
+                    android.util.Log.d("BiometricAuthenticator", "Authentication Succeeded")
                     onSuccess()
                 }
 
                 override fun onAuthenticationError(errorCode: Int, errString: CharSequence) {
                     super.onAuthenticationError(errorCode, errString)
+                    android.util.Log.e("BiometricAuthenticator", "Authentication Error: $errorCode - $errString")
                     onError(errString.toString())
                 }
 
                 override fun onAuthenticationFailed() {
                     super.onAuthenticationFailed()
-                    onError("Authentication failed")
+                    android.util.Log.w("BiometricAuthenticator", "Authentication Failed (Recognition)")
+                    onError("Authentication failed (fingerprint not recognized)")
                 }
             })
 
@@ -51,12 +55,8 @@ class BiometricAuthenticator(private val context: Context) {
         val promptInfo = BiometricPrompt.PromptInfo.Builder()
             .setTitle(title)
             .setSubtitle(subtitle)
-            .setAllowedAuthenticators(allowedAuthenticators)
-            .apply {
-                if (cryptoObject != null) {
-                    setNegativeButtonText("Cancel")
-                }
-            }
+            // Explicitly require strong biometrics and allow PIN/Pattern/Password fallback
+            .setAllowedAuthenticators(BiometricManager.Authenticators.BIOMETRIC_STRONG or BiometricManager.Authenticators.DEVICE_CREDENTIAL)
             .build()
 
         if (cryptoObject != null) {

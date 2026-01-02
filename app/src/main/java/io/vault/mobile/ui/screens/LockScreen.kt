@@ -30,18 +30,20 @@ fun LockScreen(
     // Automatically trigger biometric prompt on launch
     LaunchedEffect(Unit) {
         if (biometricAuthenticator.isBiometricAvailable()) {
-            biometricAuthenticator.authenticate(
-                activity = context as FragmentActivity,
-                title = "VAULT ENCRYPTED",
-                subtitle = "Authenticate to unlock your secure vault",
-                cryptoObject = io.vault.mobile.security.CryptoManager.getBiometricCryptoObject(),
-                onSuccess = { onUnlock() },
-                onError = { errorMessage = it }
-            )
+                val cryptoObject = io.vault.mobile.security.CryptoManager.getBiometricCryptoObject()
+                // If cryptoObject is null, it means the key was invalidated (fingerprint changed).
+                // But we still want to allow DEVICE_CREDENTIAL fallback.
+                biometricAuthenticator.authenticate(
+                    activity = context as FragmentActivity,
+                    title = "VAULT ENCRYPTED",
+                    subtitle = "Authenticate to unlock your secure vault",
+                    cryptoObject = cryptoObject, // Can be null for PIN/Pattern fallback
+                    onSuccess = { onUnlock() },
+                    onError = { errorMessage = it }
+                )
         } else {
-            // If not available, we might need a PIN fallback or just bypass for now
-            // But usually the toggle wouldn't be on if not available
-            onUnlock()
+            // SECURITY FIX: Never bypass. If not available, show error or guide user.
+            errorMessage = "Security authentication required. Enable biometrics or device lock."
         }
     }
 
@@ -66,14 +68,19 @@ fun LockScreen(
         IconButton(
             onClick = {
                 errorMessage = null
-                biometricAuthenticator.authenticate(
-                    activity = context as FragmentActivity,
-                    title = "VAULT ENCRYPTED",
-                    subtitle = "Authenticate to unlock your secure vault",
-                    cryptoObject = io.vault.mobile.security.CryptoManager.getBiometricCryptoObject(),
-                    onSuccess = { onUnlock() },
-                    onError = { errorMessage = it }
-                )
+                val cryptoObject = io.vault.mobile.security.CryptoManager.getBiometricCryptoObject()
+                if (cryptoObject != null) {
+                    biometricAuthenticator.authenticate(
+                        activity = context as FragmentActivity,
+                        title = "VAULT ENCRYPTED",
+                        subtitle = "Authenticate to unlock your secure vault",
+                        cryptoObject = cryptoObject,
+                        onSuccess = { onUnlock() },
+                        onError = { errorMessage = it }
+                    )
+                } else {
+                    errorMessage = "Biometric setup error. Please try again."
+                }
             },
             modifier = Modifier
                 .size(120.dp)
@@ -92,14 +99,19 @@ fun LockScreen(
         Button(
             onClick = {
                 errorMessage = null
-                biometricAuthenticator.authenticate(
-                    activity = context as FragmentActivity,
-                    title = "VAULT ENCRYPTED",
-                    subtitle = "Authenticate to unlock your secure vault",
-                    cryptoObject = io.vault.mobile.security.CryptoManager.getBiometricCryptoObject(),
-                    onSuccess = { onUnlock() },
-                    onError = { errorMessage = it }
-                )
+                val cryptoObject = io.vault.mobile.security.CryptoManager.getBiometricCryptoObject()
+                if (cryptoObject != null) {
+                    biometricAuthenticator.authenticate(
+                        activity = context as FragmentActivity,
+                        title = "VAULT ENCRYPTED",
+                        subtitle = "Authenticate to unlock your secure vault",
+                        cryptoObject = cryptoObject,
+                        onSuccess = { onUnlock() },
+                        onError = { errorMessage = it }
+                    )
+                } else {
+                    errorMessage = "Biometric setup error. Please try again."
+                }
             },
             modifier = Modifier
                 .fillMaxWidth()
