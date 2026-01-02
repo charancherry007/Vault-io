@@ -62,7 +62,7 @@ fun SettingsScreen(
         ) {
             SettingItem(
                 title = "Zero-Knowledge Encryption",
-                subtitle = "AES-256-GCM (Active)",
+                subtitle = "Active",
                 icon = Icons.Default.Shield
             )
             if (isBiometricAvailable) {
@@ -95,7 +95,7 @@ fun SettingsScreen(
                 onClick = onNavigateToBackup
             )
             SettingItem(
-                title = "Decentralized Storage",
+                title = "Cloud Storage",
                 subtitle = "Gateway connected",
                 icon = Icons.Default.Storage
             )

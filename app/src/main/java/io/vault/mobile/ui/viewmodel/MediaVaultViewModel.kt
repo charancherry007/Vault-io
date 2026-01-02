@@ -27,6 +27,7 @@ import io.vault.mobile.data.cloud.GoogleDriveManager
 import java.net.URLConnection
 import io.vault.mobile.data.model.MediaManifest
 import io.vault.mobile.data.model.MediaManifestEntry
+import io.vault.mobile.data.backup.BackupManager
 import com.google.gson.Gson
 
 
@@ -35,7 +36,8 @@ import com.google.gson.Gson
 class MediaVaultViewModel @Inject constructor(
     @ApplicationContext private val context: Context,
     private val encryptionService: EncryptionService,
-    private val driveManager: GoogleDriveManager
+    private val driveManager: GoogleDriveManager,
+    private val backupManager: BackupManager
 ) : ViewModel() {
 
     private val _isConnected = MutableStateFlow(false)
@@ -97,11 +99,37 @@ class MediaVaultViewModel @Inject constructor(
     fun loadMedia() {
         viewModelScope.launch {
             _isLoading.value = true
-            val manifest = if (_isConnected.value) loadManifest() else null
+            val manifest = if (_isConnected.value) backupManager.loadManifest() else null
+            
+            // 1. Fetch local device media
             val items = fetchMedia(manifest)
             _mediaItems.value = items
+            
+            // 2. Fetch locally stored "restored" media
+            val restored = fetchRestoredMedia()
+            _restoredItems.value = restored
+            
             _isLoading.value = false
         }
+    }
+
+    private suspend fun fetchRestoredMedia(): List<MediaItem> = withContext(Dispatchers.IO) {
+        val restoredDir = context.filesDir
+        val files = restoredDir.listFiles { _, name -> name.startsWith("restored_") } ?: emptyArray()
+        
+        files.map { file ->
+            val name = file.name.removePrefix("restored_")
+            val mimeType = URLConnection.guessContentTypeFromName(file.name) ?: "image/jpeg"
+            MediaItem(
+                id = file.name.hashCode().toLong(), // Stable-ish ID for local files
+                uri = Uri.fromFile(file),
+                name = name,
+                size = file.length(),
+                mimeType = mimeType,
+                dateAdded = file.lastModified() / 1000,
+                isBackedUp = true // If it's in restored folder, it's definitely a backup
+            )
+        }.sortedByDescending { it.dateAdded }
     }
 
     private suspend fun fetchMedia(manifest: MediaManifest? = null): List<MediaItem> = withContext(Dispatchers.IO) {
@@ -217,7 +245,7 @@ class MediaVaultViewModel @Inject constructor(
         selectedItems: List<MediaItem>,
         successInfos: List<androidx.work.WorkInfo>
     ) = withContext(Dispatchers.IO) {
-        val currentManifest = loadManifest() ?: MediaManifest()
+        val currentManifest = backupManager.loadManifest() ?: MediaManifest()
         val newEntries = currentManifest.entries.toMutableList()
         
         successInfos.forEach { info ->
@@ -243,7 +271,7 @@ class MediaVaultViewModel @Inject constructor(
             lastUpdated = System.currentTimeMillis(),
             entries = newEntries
         )
-        saveManifest(updatedManifest)
+        backupManager.saveManifest(updatedManifest)
 
         // Update local items state for immediate UI feedback
         val successIds = successInfos.map { it.outputData.getLong("id", -1L) }.toSet()
@@ -252,73 +280,6 @@ class MediaVaultViewModel @Inject constructor(
         }
     }
 
-    private suspend fun loadManifest(): MediaManifest? = withContext(Dispatchers.IO) {
-        if (!encryptionService.isKeyInitialized()) return@withContext null
-        
-        val driveFiles = driveManager.listFiles()
-        val manifestFile = driveFiles.find { it.name == MANIFEST_FILE_NAME } ?: return@withContext null
-        
-        val tempEncFile = File(context.cacheDir, MANIFEST_FILE_NAME)
-        val success = driveManager.downloadFile(manifestFile.id, tempEncFile)
-        
-        if (success) {
-            val decryptedFile = File(context.cacheDir, "manifest_decrypted.json")
-            try {
-                val inputStream = FileInputStream(tempEncFile)
-                val outputStream = FileOutputStream(decryptedFile)
-                encryptionService.decrypt(inputStream, outputStream)
-                inputStream.close()
-                outputStream.close()
-                
-                val json = decryptedFile.readText()
-                gson.fromJson(json, MediaManifest::class.java)
-            } catch (e: javax.crypto.AEADBadTagException) {
-                android.util.Log.e("MediaVault", "Decryption failed: Master Key mismatch or corrupted data.", e)
-                null
-            } catch (e: Exception) {
-                e.printStackTrace()
-                null
-            } finally {
-                tempEncFile.delete()
-                decryptedFile.delete()
-            }
-        } else {
-            null
-        }
-    }
-
-    private suspend fun saveManifest(manifest: MediaManifest) = withContext(Dispatchers.IO) {
-        if (!encryptionService.isKeyInitialized()) return@withContext
-        
-        val json = gson.toJson(manifest)
-        val tempJsonFile = File(context.cacheDir, "manifest_to_encrypt.json")
-        tempJsonFile.writeText(json)
-        
-        val tempEncFile = File(context.cacheDir, MANIFEST_FILE_NAME)
-        try {
-            val inputStream = FileInputStream(tempJsonFile)
-            val outputStream = FileOutputStream(tempEncFile)
-            encryptionService.encrypt(inputStream, outputStream)
-            inputStream.close()
-            outputStream.close()
-            
-            // Check if manifest already exists on Drive to update it
-            val driveFiles = driveManager.listFiles()
-            val existingManifest = driveFiles.find { it.name == MANIFEST_FILE_NAME }
-            
-            if (existingManifest != null) {
-                // Future improvement: Drive update call. For now we delete and re-upload if necessary
-                // or just upload as it will create a new version/file.
-                // GoogleDriveManager.uploadFile uses files().create().
-            }
-            driveManager.uploadFile(tempEncFile, "application/octet-stream")
-        } catch (e: Exception) {
-            e.printStackTrace()
-        } finally {
-            tempJsonFile.delete()
-            tempEncFile.delete()
-        }
-    }
 
     fun restoreFromDrive() {
         viewModelScope.launch {
@@ -326,7 +287,7 @@ class MediaVaultViewModel @Inject constructor(
             _restoreProgress.value = 0f
             _isLoading.value = true
             
-            val manifest = loadManifest()
+            val manifest = backupManager.loadManifest()
             if (manifest == null || manifest.entries.isEmpty()) {
                 _isRestoring.value = false
                 _isLoading.value = false
@@ -337,34 +298,42 @@ class MediaVaultViewModel @Inject constructor(
             val newRestoredItems = mutableListOf<MediaItem>()
 
             manifest.entries.forEachIndexed { index, entry ->
-                val tempEncFile = File(context.cacheDir, entry.blobDriveId + ".enc")
-                val success = driveManager.downloadFile(entry.blobDriveId, tempEncFile)
+                val decryptedFile = File(context.filesDir, "restored_${entry.fileName}")
                 
-                if (success) {
-                    val decryptedFile = File(context.filesDir, "restored_${entry.fileName}")
-                    try {
-                        val inputStream = FileInputStream(tempEncFile)
-                        val outputStream = FileOutputStream(decryptedFile)
-                        encryptionService.decrypt(inputStream, outputStream)
-                        inputStream.close()
-                        outputStream.close()
-
-                        newRestoredItems.add(
-                            MediaItem(
-                                id = entry.id,
-                                uri = Uri.fromFile(decryptedFile),
-                                name = entry.fileName,
-                                size = entry.size,
-                                mimeType = entry.mimeType,
-                                dateAdded = entry.dateAdded
-                            )
-                        )
-                    } catch (e: Exception) {
-                        e.printStackTrace()
-                    } finally {
-                        tempEncFile.delete()
+                // Feature 3: Skip if already exists
+                if (!decryptedFile.exists()) {
+                    val tempEncFile = File(context.cacheDir, entry.blobDriveId + ".enc")
+                    val success = driveManager.downloadFile(entry.blobDriveId, tempEncFile)
+                    
+                    if (success) {
+                        try {
+                            val inputStream = FileInputStream(tempEncFile)
+                            val outputStream = FileOutputStream(decryptedFile)
+                            encryptionService.decrypt(inputStream, outputStream)
+                            inputStream.close()
+                            outputStream.close()
+                        } catch (e: Exception) {
+                            e.printStackTrace()
+                        } finally {
+                            tempEncFile.delete()
+                        }
                     }
                 }
+
+                // Always add to the list if we found the manifest entry
+                if (decryptedFile.exists()) {
+                    newRestoredItems.add(
+                        MediaItem(
+                            id = entry.id,
+                            uri = Uri.fromFile(decryptedFile),
+                            name = entry.fileName,
+                            size = entry.size,
+                            mimeType = entry.mimeType,
+                            dateAdded = entry.dateAdded
+                        )
+                    )
+                }
+                
                 _restoreProgress.value = (index + 1).toFloat() / totalFiles
             }
             _restoredItems.value = newRestoredItems
@@ -472,7 +441,7 @@ class MediaVaultViewModel @Inject constructor(
 
         viewModelScope.launch {
             _isLoading.value = true
-            val currentManifest = loadManifest() ?: MediaManifest()
+            val currentManifest = backupManager.loadManifest() ?: MediaManifest()
             val entriesToDelete = currentManifest.entries.filter { selectedIds.contains(it.id) }
             
             var successCount = 0
@@ -496,7 +465,7 @@ class MediaVaultViewModel @Inject constructor(
                 lastUpdated = System.currentTimeMillis(),
                 entries = updatedEntries
             )
-            saveManifest(updatedManifest)
+            backupManager.saveManifest(updatedManifest)
 
             // 4. Update UI states
             _restoredItems.value = _restoredItems.value.filterNot { selectedIds.contains(it.id) }

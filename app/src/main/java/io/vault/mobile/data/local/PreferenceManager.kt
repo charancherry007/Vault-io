@@ -23,6 +23,7 @@ class PreferenceManager @Inject constructor(
     private val AUTOFILL_ENABLED_KEY = booleanPreferencesKey("autofill_enabled")
     private val BIOMETRIC_ENABLED_KEY = booleanPreferencesKey("biometric_enabled")
     private val ONBOARDING_COMPLETED_KEY = booleanPreferencesKey("onboarding_completed")
+    private val LAST_RESTORE_TIME_KEY = androidx.datastore.preferences.core.longPreferencesKey("last_restore_time")
 
     val autoBackupEnabled: Flow<Boolean> = context.dataStore.data.map { preferences ->
         preferences[AUTO_BACKUP_KEY] ?: false
@@ -38,6 +39,10 @@ class PreferenceManager @Inject constructor(
 
     val onboardingCompleted: Flow<Boolean> = context.dataStore.data.map { preferences ->
         preferences[ONBOARDING_COMPLETED_KEY] ?: false
+    }
+
+    val lastRestoreTime: Flow<Long> = context.dataStore.data.map { preferences ->
+        preferences[LAST_RESTORE_TIME_KEY] ?: 0L
     }
 
     suspend fun setAutoBackupEnabled(enabled: Boolean) {
@@ -61,6 +66,12 @@ class PreferenceManager @Inject constructor(
     suspend fun setOnboardingCompleted(completed: Boolean) {
         context.dataStore.edit { preferences ->
             preferences[ONBOARDING_COMPLETED_KEY] = completed
+        }
+    }
+
+    suspend fun setLastRestoreTime(timestamp: Long) {
+        context.dataStore.edit { preferences ->
+            preferences[LAST_RESTORE_TIME_KEY] = timestamp
         }
     }
 }

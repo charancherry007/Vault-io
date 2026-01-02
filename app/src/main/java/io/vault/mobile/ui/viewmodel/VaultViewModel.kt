@@ -118,28 +118,15 @@ class VaultViewModel @Inject constructor(
             _isSyncing.value = true
             _syncError.value = null
             
-            // Feature 3: Strictly verify password against Master Key before restoring any data
-            val validation = masterKeyManager.downloadAndVerifyPassword(password)
+            // 1. Unified restore of everything (Master Key -> Passwords -> Media)
+            val success = backupManager.restoreAll(password)
             
-            when (validation) {
-                is io.vault.mobile.security.MasterKeyValidationResult.Success -> {
-                    // Password matches the remote encrypted key! Proceed with data restore.
-                    val success = backupManager.restoreBackup(password)
-                    if (success) {
-                        onSuccess()
-                    } else {
-                        _syncError.value = "Failed to restore data. Backup might be corrupted."
-                    }
-                }
-                is io.vault.mobile.security.MasterKeyValidationResult.InvalidPassword -> {
-                    _syncError.value = "Master key does not match. Restore denied."
-                }
-                is io.vault.mobile.security.MasterKeyValidationResult.NoRemoteKey -> {
-                    _syncError.value = "No master key found on Google Drive."
-                }
-                else -> {
-                    _syncError.value = "Verification failed. Check your connection."
-                }
+            if (success) {
+                _syncError.value = null // Success
+                onSuccess()
+            } else {
+                // If restoreAll failed, it's likely due to invalid password or connection
+                _syncError.value = "Restore failed. Please check your Master Password and connection."
             }
             _isSyncing.value = false
         }
