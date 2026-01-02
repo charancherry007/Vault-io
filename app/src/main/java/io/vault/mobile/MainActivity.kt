@@ -81,7 +81,7 @@ class MainActivity : FragmentActivity() {
                 // Device Integrity Check
                 LaunchedEffect(Unit) {
                     // Note: Replace with actual Cloud Project Number from Play Console
-                    val cloudProjectNumber = 560128341629L // Placeholder
+                    val cloudProjectNumber = BuildConfig.PLAY_INTEGRITY_PROJECT_NUMBER
                     val integrityResult = integrityManager.requestIntegrityToken(cloudProjectNumber)
                     integrityResult.onSuccess { token ->
                         android.util.Log.d("IntegrityCheck", "Token received: ${token.take(20)}...")
