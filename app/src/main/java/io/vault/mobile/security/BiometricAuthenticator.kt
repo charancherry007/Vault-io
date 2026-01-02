@@ -52,12 +52,28 @@ class BiometricAuthenticator(private val context: Context) {
             BiometricManager.Authenticators.BIOMETRIC_STRONG or BiometricManager.Authenticators.DEVICE_CREDENTIAL
         }
 
-        val promptInfo = BiometricPrompt.PromptInfo.Builder()
+        val builder = BiometricPrompt.PromptInfo.Builder()
             .setTitle(title)
             .setSubtitle(subtitle)
-            // Explicitly require strong biometrics and allow PIN/Pattern/Password fallback
-            .setAllowedAuthenticators(BiometricManager.Authenticators.BIOMETRIC_STRONG or BiometricManager.Authenticators.DEVICE_CREDENTIAL)
-            .build()
+
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R) {
+            // API 30+: Use the modern unified authenticator selection
+            builder.setAllowedAuthenticators(BiometricManager.Authenticators.BIOMETRIC_STRONG or BiometricManager.Authenticators.DEVICE_CREDENTIAL)
+        } else {
+            // API 26-29: Use the legacy approach
+            // Note: On some older devices, combining BIOMETRIC and DEVICE_CREDENTIAL in one line is flaky.
+            // We prioritize the modern library's attempt but provide a negative button if device credential isn't guaranteed.
+            if (cryptoObject == null) {
+                // If no cryptoObject, we can use the library's device credential fallback
+                @Suppress("DEPRECATION")
+                builder.setDeviceCredentialAllowed(true)
+            } else {
+                // With cryptoObject (Fingerprint key), many older versions require a negative button
+                builder.setNegativeButtonText("Cancel")
+            }
+        }
+
+        val promptInfo = builder.build()
 
         if (cryptoObject != null) {
             biometricPrompt.authenticate(promptInfo, cryptoObject)

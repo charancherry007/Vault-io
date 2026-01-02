@@ -65,9 +65,16 @@ object CryptoManager {
             )
                 .setBlockModes(BLOCK_MODE)
                 .setEncryptionPaddings(PADDING)
-                // Enforce BIOMETRIC_STRONG but allow DEVICE_CREDENTIAL (PIN/Pattern/Pass) fallback
-                .setUserAuthenticationParameters(0, KeyProperties.AUTH_BIOMETRIC_STRONG or KeyProperties.AUTH_DEVICE_CREDENTIAL)
                 .setRandomizedEncryptionRequired(true)
+                .apply {
+                    if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R) {
+                        // API 30+: Enforce BIOMETRIC_STRONG but allow DEVICE_CREDENTIAL fallback
+                        setUserAuthenticationParameters(0, KeyProperties.AUTH_BIOMETRIC_STRONG or KeyProperties.AUTH_DEVICE_CREDENTIAL)
+                    } else {
+                        // API 26-29: Older method, allows biometrics
+                        setUserAuthenticationRequired(true)
+                    }
+                }
                 .build()
         )
         return keyGenerator.generateKey()
