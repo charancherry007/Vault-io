@@ -28,6 +28,7 @@ class BackupManager @Inject constructor(
 ) {
     private val gson = Gson()
     private val BACKUP_FILE_NAME = "vault_password_backup.bin"
+    private val BACKUP_VERSION: Byte = 0x02
     private val MANIFEST_FILE_NAME = "media_manifest.enc"
 
     data class VaultBackup(
@@ -61,15 +62,16 @@ class BackupManager @Inject constructor(
             val json = gson.toJson(backup)
             
             val salt = KeyDerivation.generateSalt()
-            val key = KeyDerivation.deriveKey(password, salt)
+            val key = KeyDerivation.deriveKey(password, salt, KeyDerivation.ITERATIONS_V2)
             val encryptedBackup = CryptoManager.encryptWithKey(json.encodeToByteArray(), key)
             
-            val finalData = salt + encryptedBackup
+            val finalData = byteArrayOf(BACKUP_VERSION) + salt + encryptedBackup
             
             val tempFile = File(driveManager.getContext().cacheDir, BACKUP_FILE_NAME)
             tempFile.writeBytes(finalData)
             
-            val driveId = driveManager.uploadFile(tempFile, "application/octet-stream")
+            val existingFile = driveManager.findFileByName(BACKUP_FILE_NAME)
+            val driveId = driveManager.uploadFile(tempFile, "application/octet-stream", existingFile?.id)
             tempFile.delete()
             
             driveId != null
@@ -116,10 +118,28 @@ class BackupManager @Inject constructor(
                 val fullData = tempFile.readBytes()
                 tempFile.delete()
                 
-                val salt = fullData.sliceArray(0 until 16)
-                val encryptedData = fullData.sliceArray(16 until fullData.size)
+                if (fullData.isEmpty()) return@withContext false
+
+                val (salt, encryptedData, iterations) = if (fullData[0] == BACKUP_VERSION) {
+                    // Version 2: [VERSION (1)] [SALT (16)] [DATA]
+                    if (fullData.size < 18) return@withContext false
+                    Triple(
+                        fullData.sliceArray(1 until 17),
+                        fullData.sliceArray(17 until fullData.size),
+                        KeyDerivation.ITERATIONS_V2
+                    )
+                } else {
+                    // Version 1 (Legacy): [SALT (16)] [DATA]
+                    if (fullData.size < 16) return@withContext false
+                    Triple(
+                        fullData.sliceArray(0 until 16),
+                        fullData.sliceArray(16 until fullData.size),
+                        KeyDerivation.ITERATIONS_V1
+                    )
+                }
                 
-                val key = KeyDerivation.deriveKey(password, salt)
+                // 3. Derive Key with correct iterations
+                val key = KeyDerivation.deriveKey(password, salt, iterations)
                 val decryptedJsonBytes = CryptoManager.decryptWithKey(encryptedData, key)
                 val decryptedJson = decryptedJsonBytes.decodeToString()
                 
@@ -217,11 +237,12 @@ class BackupManager @Inject constructor(
         try {
             val inputStream = FileInputStream(tempJsonFile)
             val outputStream = FileOutputStream(tempEncFile)
-            encryptionService.encrypt(inputStream, outputStream)
+            encryptionService.encrypt(inputStream, outputStream, tempJsonFile.length())
             inputStream.close()
             outputStream.close()
             
-            driveManager.uploadFile(tempEncFile, "application/octet-stream")
+            val existingFile = driveManager.findFileByName(MANIFEST_FILE_NAME)
+            driveManager.uploadFile(tempEncFile, "application/octet-stream", existingFile?.id)
         } finally {
             tempJsonFile.delete()
             tempEncFile.delete()

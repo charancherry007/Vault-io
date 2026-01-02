@@ -10,6 +10,7 @@ class BiometricAuthenticator(private val context: Context) {
 
     fun isBiometricAvailable(): Boolean {
         val biometricManager = BiometricManager.from(context)
+        // Strictly require BIOMETRIC_STRONG OR DEVICE_CREDENTIAL (fallback)
         return biometricManager.canAuthenticate(
             BiometricManager.Authenticators.BIOMETRIC_STRONG or BiometricManager.Authenticators.DEVICE_CREDENTIAL
         ) == BiometricManager.BIOMETRIC_SUCCESS
@@ -28,17 +29,20 @@ class BiometricAuthenticator(private val context: Context) {
             object : BiometricPrompt.AuthenticationCallback() {
                 override fun onAuthenticationSucceeded(result: BiometricPrompt.AuthenticationResult) {
                     super.onAuthenticationSucceeded(result)
+                    android.util.Log.d("BiometricAuthenticator", "Authentication Succeeded")
                     onSuccess()
                 }
 
                 override fun onAuthenticationError(errorCode: Int, errString: CharSequence) {
                     super.onAuthenticationError(errorCode, errString)
+                    android.util.Log.e("BiometricAuthenticator", "Authentication Error: $errorCode - $errString")
                     onError(errString.toString())
                 }
 
                 override fun onAuthenticationFailed() {
                     super.onAuthenticationFailed()
-                    onError("Authentication failed")
+                    android.util.Log.w("BiometricAuthenticator", "Authentication Failed (Recognition)")
+                    onError("Authentication failed (fingerprint not recognized)")
                 }
             })
 
@@ -48,16 +52,28 @@ class BiometricAuthenticator(private val context: Context) {
             BiometricManager.Authenticators.BIOMETRIC_STRONG or BiometricManager.Authenticators.DEVICE_CREDENTIAL
         }
 
-        val promptInfo = BiometricPrompt.PromptInfo.Builder()
+        val builder = BiometricPrompt.PromptInfo.Builder()
             .setTitle(title)
             .setSubtitle(subtitle)
-            .setAllowedAuthenticators(allowedAuthenticators)
-            .apply {
-                if (cryptoObject != null) {
-                    setNegativeButtonText("Cancel")
-                }
+
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R) {
+            // API 30+: Use the modern unified authenticator selection
+            builder.setAllowedAuthenticators(BiometricManager.Authenticators.BIOMETRIC_STRONG or BiometricManager.Authenticators.DEVICE_CREDENTIAL)
+        } else {
+            // API 26-29: Use the legacy approach
+            // Note: On some older devices, combining BIOMETRIC and DEVICE_CREDENTIAL in one line is flaky.
+            // We prioritize the modern library's attempt but provide a negative button if device credential isn't guaranteed.
+            if (cryptoObject == null) {
+                // If no cryptoObject, we can use the library's device credential fallback
+                @Suppress("DEPRECATION")
+                builder.setDeviceCredentialAllowed(true)
+            } else {
+                // With cryptoObject (Fingerprint key), many older versions require a negative button
+                builder.setNegativeButtonText("Cancel")
             }
-            .build()
+        }
+
+        val promptInfo = builder.build()
 
         if (cryptoObject != null) {
             biometricPrompt.authenticate(promptInfo, cryptoObject)

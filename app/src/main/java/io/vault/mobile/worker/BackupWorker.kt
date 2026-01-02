@@ -30,10 +30,14 @@ class BackupWorker @AssistedInject constructor(
         
         try {
             val tempFile = File(applicationContext.cacheDir, "$fileName.enc")
+            val pfd = applicationContext.contentResolver.openFileDescriptor(uri, "r")
+            val dataSize = pfd?.statSize ?: 0L
+            pfd?.close()
+
             val inputStream = applicationContext.contentResolver.openInputStream(uri) ?: return@withContext Result.failure()
             val outputStream = FileOutputStream(tempFile)
             
-            encryptionService.encrypt(inputStream, outputStream)
+            encryptionService.encrypt(inputStream, outputStream, dataSize)
             
             inputStream.close()
             outputStream.close()

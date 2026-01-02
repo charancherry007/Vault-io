@@ -6,12 +6,13 @@ import javax.crypto.spec.PBEKeySpec
 
 object KeyDerivation {
 
-    private const val ITERATIONS = 65536
+    const val ITERATIONS_V1 = 65536
+    const val ITERATIONS_V2 = 310000
     private const val KEY_LENGTH = 256
     private const val SALT_LENGTH = 16
 
-    fun deriveKey(password: String, salt: ByteArray): ByteArray {
-        val spec = PBEKeySpec(password.toCharArray(), salt, ITERATIONS, KEY_LENGTH)
+    fun deriveKey(password: String, salt: ByteArray, iterations: Int = ITERATIONS_V2): ByteArray {
+        val spec = PBEKeySpec(password.toCharArray(), salt, iterations, KEY_LENGTH)
         val factory = SecretKeyFactory.getInstance("PBKDF2WithHmacSHA256")
         return factory.generateSecret(spec).encoded
     }

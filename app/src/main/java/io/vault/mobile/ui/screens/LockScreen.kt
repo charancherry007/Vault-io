@@ -26,22 +26,37 @@ fun LockScreen(
 ) {
     val context = LocalContext.current
     var errorMessage by remember { mutableStateOf<String?>(null) }
+    var isPromptActive by remember { mutableStateOf(false) }
 
-    // Automatically trigger biometric prompt on launch
-    LaunchedEffect(Unit) {
-        if (biometricAuthenticator.isBiometricAvailable()) {
+    val handleAuthentication = {
+        if (!isPromptActive) {
+            errorMessage = null
+            isPromptActive = true
+            val cryptoObject = io.vault.mobile.security.CryptoManager.getBiometricCryptoObject()
+            
             biometricAuthenticator.authenticate(
                 activity = context as FragmentActivity,
                 title = "VAULT ENCRYPTED",
                 subtitle = "Authenticate to unlock your secure vault",
-                cryptoObject = io.vault.mobile.security.CryptoManager.getBiometricCryptoObject(),
-                onSuccess = { onUnlock() },
-                onError = { errorMessage = it }
+                cryptoObject = cryptoObject,
+                onSuccess = { 
+                    isPromptActive = false
+                    onUnlock() 
+                },
+                onError = { 
+                    isPromptActive = false
+                    errorMessage = it 
+                }
             )
+        }
+    }
+
+    // Automatically trigger biometric prompt on launch
+    LaunchedEffect(Unit) {
+        if (biometricAuthenticator.isBiometricAvailable()) {
+            handleAuthentication()
         } else {
-            // If not available, we might need a PIN fallback or just bypass for now
-            // But usually the toggle wouldn't be on if not available
-            onUnlock()
+            errorMessage = "Security authentication required. Enable biometrics or device lock."
         }
     }
 
@@ -64,17 +79,7 @@ fun LockScreen(
         Spacer(modifier = Modifier.height(64.dp))
 
         IconButton(
-            onClick = {
-                errorMessage = null
-                biometricAuthenticator.authenticate(
-                    activity = context as FragmentActivity,
-                    title = "VAULT ENCRYPTED",
-                    subtitle = "Authenticate to unlock your secure vault",
-                    cryptoObject = io.vault.mobile.security.CryptoManager.getBiometricCryptoObject(),
-                    onSuccess = { onUnlock() },
-                    onError = { errorMessage = it }
-                )
-            },
+            onClick = { handleAuthentication() },
             modifier = Modifier
                 .size(120.dp)
                 .background(NeonBlue.copy(alpha = 0.1f), RoundedCornerShape(30.dp))
@@ -90,17 +95,7 @@ fun LockScreen(
         Spacer(modifier = Modifier.height(48.dp))
 
         Button(
-            onClick = {
-                errorMessage = null
-                biometricAuthenticator.authenticate(
-                    activity = context as FragmentActivity,
-                    title = "VAULT ENCRYPTED",
-                    subtitle = "Authenticate to unlock your secure vault",
-                    cryptoObject = io.vault.mobile.security.CryptoManager.getBiometricCryptoObject(),
-                    onSuccess = { onUnlock() },
-                    onError = { errorMessage = it }
-                )
-            },
+            onClick = { handleAuthentication() },
             modifier = Modifier
                 .fillMaxWidth()
                 .height(56.dp),

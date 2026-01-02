@@ -65,17 +65,37 @@ object CryptoManager {
             )
                 .setBlockModes(BLOCK_MODE)
                 .setEncryptionPaddings(PADDING)
-                .setUserAuthenticationRequired(true)
                 .setRandomizedEncryptionRequired(true)
+                .apply {
+                    if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R) {
+                        // API 30+: Enforce BIOMETRIC_STRONG but allow DEVICE_CREDENTIAL fallback
+                        setUserAuthenticationParameters(0, KeyProperties.AUTH_BIOMETRIC_STRONG or KeyProperties.AUTH_DEVICE_CREDENTIAL)
+                    } else {
+                        // API 26-29: Older method, allows biometrics
+                        setUserAuthenticationRequired(true)
+                    }
+                }
                 .build()
         )
         return keyGenerator.generateKey()
     }
 
-    fun getBiometricCryptoObject(): BiometricPrompt.CryptoObject {
-        val cipher = Cipher.getInstance(TRANSFORMATION)
-        cipher.init(Cipher.ENCRYPT_MODE, getBiometricKey())
-        return BiometricPrompt.CryptoObject(cipher)
+    fun getBiometricCryptoObject(): BiometricPrompt.CryptoObject? {
+        return try {
+            val cipher = Cipher.getInstance(TRANSFORMATION)
+            cipher.init(Cipher.ENCRYPT_MODE, getBiometricKey())
+            BiometricPrompt.CryptoObject(cipher)
+        } catch (e: Exception) {
+            e.printStackTrace()
+            if (e.toString().contains("KeyPermanentlyInvalidatedException")) {
+                deleteBiometricKey()
+            }
+            null
+        }
+    }
+
+    private fun deleteBiometricKey() {
+        keyStore.deleteEntry(BIOMETRIC_KEY_ALIAS)
     }
 
     fun encrypt(data: ByteArray): ByteArray {
