@@ -62,10 +62,11 @@ class MasterKeyManager @Inject constructor(
             val encryptedBackup = CryptoManager.encryptWithKey(masterKeyBytes, encryptionKey)
             val finalBackupData = byteArrayOf(BACKUP_VERSION) + salt + encryptedBackup
 
-            // 4. Save to local temp file and upload to Drive
+            // 4. Save to local temp file and upload to Drive (Update if exists)
             val tempFile = File(context.cacheDir, MASTER_KEY_FILE)
             tempFile.writeBytes(finalBackupData)
-            val driveId = driveManager.uploadFile(tempFile, "application/octet-stream")
+            val existingFile = driveManager.findFileByName(MASTER_KEY_FILE)
+            val driveId = driveManager.uploadFile(tempFile, "application/octet-stream", existingFile?.id)
             tempFile.delete()
 
             if (driveId != null) {
@@ -169,13 +170,13 @@ class MasterKeyManager @Inject constructor(
                 encryptedDir.deleteRecursively()
             }
 
-            // 4. Reset Preferences
-            preferenceManager.setOnboardingCompleted(false)
-            preferenceManager.setBiometricEnabled(false)
-            preferenceManager.setAutoBackupEnabled(false)
-            preferenceManager.setLastRestoreTime(0)
+            // 4. Wipe Cache
+            context.cacheDir.deleteRecursively()
 
-            // 5. Remove Master Key from Keystore
+            // 5. Reset Preferences
+            preferenceManager.clearAll()
+
+            // 6. Remove Master Key from Keystore
             CryptoManager.deleteMasterKey()
 
             driveWiped
@@ -238,7 +239,8 @@ class MasterKeyManager @Inject constructor(
 
         val tempFile = File(context.cacheDir, MASTER_KEY_FILE)
         tempFile.writeBytes(finalBackupData)
-        val driveId = driveManager.uploadFile(tempFile, "application/octet-stream")
+        val existingFile = driveManager.findFileByName(MASTER_KEY_FILE)
+        val driveId = driveManager.uploadFile(tempFile, "application/octet-stream", existingFile?.id)
         tempFile.delete()
         return driveId != null
     }

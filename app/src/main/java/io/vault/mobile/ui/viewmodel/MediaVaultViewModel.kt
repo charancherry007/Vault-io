@@ -479,4 +479,43 @@ class MediaVaultViewModel @Inject constructor(
             clearSelection()
         }
     }
+
+    fun deleteSingleRestoredItem(item: MediaItem, onResult: (Boolean) -> Unit) {
+        viewModelScope.launch {
+            _isLoading.value = true
+            try {
+                // 1. Delete local file
+                val localFile = File(context.filesDir, "restored_${item.name}")
+                if (localFile.exists()) localFile.delete()
+
+                // 2. Delete from Google Drive
+                val currentManifest = backupManager.loadManifest() ?: MediaManifest()
+                val entry = currentManifest.entries.find { it.id == item.id }
+                if (entry != null) {
+                    driveManager.deleteFile(entry.blobDriveId)
+                }
+
+                // 3. Update manifest
+                val updatedEntries = currentManifest.entries.filterNot { it.id == item.id }
+                val updatedManifest = currentManifest.copy(
+                    lastUpdated = System.currentTimeMillis(),
+                    entries = updatedEntries
+                )
+                backupManager.saveManifest(updatedManifest)
+
+                // 4. Update UI
+                _restoredItems.value = _restoredItems.value.filterNot { it.id == item.id }
+                _mediaItems.value = _mediaItems.value.map { galleryItem ->
+                    if (galleryItem.id == item.id) galleryItem.copy(isBackedUp = false) else galleryItem
+                }
+                
+                _isLoading.value = false
+                onResult(true)
+            } catch (e: Exception) {
+                e.printStackTrace()
+                _isLoading.value = false
+                onResult(false)
+            }
+        }
+    }
 }

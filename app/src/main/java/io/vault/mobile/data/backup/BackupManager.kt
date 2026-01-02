@@ -70,7 +70,8 @@ class BackupManager @Inject constructor(
             val tempFile = File(driveManager.getContext().cacheDir, BACKUP_FILE_NAME)
             tempFile.writeBytes(finalData)
             
-            val driveId = driveManager.uploadFile(tempFile, "application/octet-stream")
+            val existingFile = driveManager.findFileByName(BACKUP_FILE_NAME)
+            val driveId = driveManager.uploadFile(tempFile, "application/octet-stream", existingFile?.id)
             tempFile.delete()
             
             driveId != null
@@ -240,7 +241,8 @@ class BackupManager @Inject constructor(
             inputStream.close()
             outputStream.close()
             
-            driveManager.uploadFile(tempEncFile, "application/octet-stream")
+            val existingFile = driveManager.findFileByName(MANIFEST_FILE_NAME)
+            driveManager.uploadFile(tempEncFile, "application/octet-stream", existingFile?.id)
         } finally {
             tempJsonFile.delete()
             tempEncFile.delete()

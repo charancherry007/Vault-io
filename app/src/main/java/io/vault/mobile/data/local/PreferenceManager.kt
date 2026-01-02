@@ -74,4 +74,10 @@ class PreferenceManager @Inject constructor(
             preferences[LAST_RESTORE_TIME_KEY] = timestamp
         }
     }
+
+    suspend fun clearAll() {
+        context.dataStore.edit { preferences ->
+            preferences.clear()
+        }
+    }
 }

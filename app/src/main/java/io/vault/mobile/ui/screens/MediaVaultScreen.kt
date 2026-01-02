@@ -377,6 +377,16 @@ fun MediaVaultScreen(
                             Toast.makeText(context, if (success) "Saved to Gallery" else "Failed to save", Toast.LENGTH_SHORT).show()
                         }
                     },
+                    onDelete = { selectedItem ->
+                        viewModel.deleteSingleRestoredItem(selectedItem) { success ->
+                            if (success) {
+                                Toast.makeText(context, "Deleted from vault and cloud", Toast.LENGTH_SHORT).show()
+                                viewModel.setViewingItem(null)
+                            } else {
+                                Toast.makeText(context, "Failed to delete", Toast.LENGTH_SHORT).show()
+                            }
+                        }
+                    },
                     onClose = { viewModel.setViewingItem(null) }
                 )
             }
@@ -438,10 +448,12 @@ fun MediaViewer(
     initialIndex: Int,
     isRestored: Boolean = false,
     onSave: ((MediaItem) -> Unit)? = null,
+    onDelete: ((MediaItem) -> Unit)? = null,
     onClose: () -> Unit
 ) {
     val pagerState = rememberPagerState(initialPage = initialIndex, pageCount = { items.size })
     val currentItem = items.getOrNull(pagerState.currentPage)
+    var showDeleteConfirm by remember { mutableStateOf(false) }
 
     Box(modifier = Modifier.fillMaxSize().background(Color.Black)) {
         HorizontalPager(
@@ -480,6 +492,15 @@ fun MediaViewer(
                 }
                 Spacer(modifier = Modifier.width(8.dp))
             }
+            if (isRestored && onDelete != null && currentItem != null) {
+                IconButton(
+                    onClick = { showDeleteConfirm = true },
+                    modifier = Modifier.background(Color.Black.copy(alpha = 0.5f), CircleShape)
+                ) {
+                    Icon(Icons.Default.Delete, contentDescription = "Delete from vault", tint = Color.Red)
+                }
+                Spacer(modifier = Modifier.width(8.dp))
+            }
             IconButton(
                 onClick = onClose,
                 modifier = Modifier.background(Color.Black.copy(alpha = 0.5f), CircleShape)
@@ -502,5 +523,31 @@ fun MediaViewer(
                 Text("${pagerState.currentPage + 1} / ${items.size}", color = NeonBlue, fontSize = 12.sp, modifier = Modifier.padding(top = 4.dp))
             }
         }
+    }
+
+    if (showDeleteConfirm && currentItem != null) {
+        AlertDialog(
+            onDismissRequest = { showDeleteConfirm = false },
+            title = { Text("Delete from Vault?", color = NeonBlue, fontWeight = FontWeight.Bold) },
+            text = { Text("This will remove the file from your local vault and permanently delete the backup from Google Drive.", color = Color.White) },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        showDeleteConfirm = false
+                        onDelete?.invoke(currentItem)
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = Color.Red)
+                ) {
+                    Text("DELETE EVERYWHERE", color = Color.White, fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDeleteConfirm = false }) {
+                    Text("CANCEL", color = Color.Gray)
+                }
+            },
+            containerColor = CyberGray,
+            shape = RoundedCornerShape(16.dp)
+        )
     }
 }

@@ -60,25 +60,38 @@ class GoogleDriveManager @Inject constructor(
         .build()
     }
 
-    suspend fun uploadFile(file: File, mimeType: String): String? = withContext(Dispatchers.IO) {
+    suspend fun uploadFile(file: File, mimeType: String, existingFileId: String? = null): String? = withContext(Dispatchers.IO) {
         val service = getDriveService() ?: return@withContext null
         
-        val fileMetadata = DriveFile().apply {
-            name = file.name
-            parents = listOf("appDataFolder") // Or a specific folder
-        }
-        
-        val mediaContent = FileContent(mimeType, file)
-        
         try {
-            val driveFile = service.files().create(fileMetadata, mediaContent)
-                .setFields("id")
-                .execute()
-            driveFile.id
+            if (existingFileId != null) {
+                // Update existing file
+                val mediaContent = FileContent(mimeType, file)
+                val updatedFile = service.files().update(existingFileId, null, mediaContent)
+                    .setFields("id")
+                    .execute()
+                updatedFile.id
+            } else {
+                // Create new file
+                val fileMetadata = DriveFile().apply {
+                    name = file.name
+                    parents = listOf("appDataFolder")
+                }
+                val mediaContent = FileContent(mimeType, file)
+                val driveFile = service.files().create(fileMetadata, mediaContent)
+                    .setFields("id")
+                    .execute()
+                driveFile.id
+            }
         } catch (e: Exception) {
             e.printStackTrace()
             null
         }
+    }
+
+    suspend fun findFileByName(name: String): DriveFile? = withContext(Dispatchers.IO) {
+        val files = listFiles()
+        files.find { it.name == name }
     }
 
     suspend fun listFiles(): List<DriveFile> = withContext(Dispatchers.IO) {
