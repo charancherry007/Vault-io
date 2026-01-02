@@ -236,7 +236,7 @@ class BackupManager @Inject constructor(
         try {
             val inputStream = FileInputStream(tempJsonFile)
             val outputStream = FileOutputStream(tempEncFile)
-            encryptionService.encrypt(inputStream, outputStream)
+            encryptionService.encrypt(inputStream, outputStream, tempJsonFile.length())
             inputStream.close()
             outputStream.close()
             
