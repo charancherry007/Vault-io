@@ -153,6 +153,7 @@ class MasterKeyManager @Inject constructor(
             preferenceManager.setOnboardingCompleted(false)
             preferenceManager.setBiometricEnabled(false)
             preferenceManager.setAutoBackupEnabled(false)
+            preferenceManager.setLastRestoreTime(0)
 
             // 5. Remove Master Key from Keystore
             CryptoManager.deleteMasterKey()
