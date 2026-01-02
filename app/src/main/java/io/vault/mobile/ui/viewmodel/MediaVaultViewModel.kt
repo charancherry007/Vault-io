@@ -415,4 +415,98 @@ class MediaVaultViewModel @Inject constructor(
             }
         }
     }
+
+    fun downloadSelectedFromRestored(onResult: (Int, Int) -> Unit) {
+        val selectedItems = _restoredItems.value.filter { _selectedIds.value.contains(it.id) }
+        if (selectedItems.isEmpty()) return
+
+        viewModelScope.launch {
+            var successCount = 0
+            selectedItems.forEach { item ->
+                try {
+                    withContext(Dispatchers.IO) {
+                        val contentValues = ContentValues().apply {
+                            put(MediaStore.MediaColumns.DISPLAY_NAME, item.name)
+                            put(MediaStore.MediaColumns.MIME_TYPE, item.mimeType)
+                            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
+                                val folder = if (item.mimeType.startsWith("image")) "Pictures/Vault" else "Movies/Vault"
+                                put(MediaStore.MediaColumns.RELATIVE_PATH, folder)
+                                put(MediaStore.MediaColumns.IS_PENDING, 1)
+                            }
+                        }
+
+                        val collection = if (item.mimeType.startsWith("image")) {
+                            MediaStore.Images.Media.EXTERNAL_CONTENT_URI
+                        } else {
+                            MediaStore.Video.Media.EXTERNAL_CONTENT_URI
+                        }
+
+                        val uri = context.contentResolver.insert(collection, contentValues)
+                            ?: throw Exception("Failed to create MediaStore entry")
+
+                        context.contentResolver.openOutputStream(uri)?.use { output ->
+                            context.contentResolver.openInputStream(item.uri)?.use { input ->
+                                input.copyTo(output)
+                            }
+                        }
+
+                        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
+                            contentValues.clear()
+                            contentValues.put(MediaStore.MediaColumns.IS_PENDING, 0)
+                            context.contentResolver.update(uri, contentValues, null, null)
+                        }
+                    }
+                    successCount++
+                } catch (e: Exception) {
+                    e.printStackTrace()
+                }
+            }
+            onResult(successCount, selectedItems.size)
+            clearSelection()
+        }
+    }
+
+    fun deleteRestoredItems(onResult: (Int, Int) -> Unit) {
+        val selectedIds = _selectedIds.value
+        if (selectedIds.isEmpty()) return
+
+        viewModelScope.launch {
+            _isLoading.value = true
+            val currentManifest = loadManifest() ?: MediaManifest()
+            val entriesToDelete = currentManifest.entries.filter { selectedIds.contains(it.id) }
+            
+            var successCount = 0
+            entriesToDelete.forEach { entry ->
+                try {
+                    // 1. Delete local file if it exists
+                    val localFile = File(context.filesDir, "restored_${entry.fileName}")
+                    if (localFile.exists()) localFile.delete()
+
+                    // 2. Delete from Google Drive
+                    val driveSuccess = driveManager.deleteFile(entry.blobDriveId)
+                    if (driveSuccess) successCount++
+                } catch (e: Exception) {
+                    e.printStackTrace()
+                }
+            }
+
+            // 3. Update manifest and re-upload
+            val updatedEntries = currentManifest.entries.filterNot { selectedIds.contains(it.id) }
+            val updatedManifest = currentManifest.copy(
+                lastUpdated = System.currentTimeMillis(),
+                entries = updatedEntries
+            )
+            saveManifest(updatedManifest)
+
+            // 4. Update UI states
+            _restoredItems.value = _restoredItems.value.filterNot { selectedIds.contains(it.id) }
+            _mediaItems.value = _mediaItems.value.map { item ->
+                if (selectedIds.contains(item.id)) item.copy(isBackedUp = false) else item
+            }
+
+            _isLoading.value = false
+            onResult(successCount, entriesToDelete.size)
+            clearSelection()
+        }
+    }
 }

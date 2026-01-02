@@ -14,6 +14,9 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.material3.TabRowDefaults.tabIndicatorOffset
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
+
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -55,6 +58,12 @@ fun MediaVaultScreen(
     
     var activeTab by remember { mutableStateOf(0) } // 0 for Device, 1 for Restored
     var hasPermission by remember { mutableStateOf(false) }
+
+    // Track the current list for the viewer to handle swiping
+    val currentGalleryList = if (activeTab == 0) mediaItems else restoredItems
+    val initialViewerIndex = remember(viewingItem, currentGalleryList) {
+        currentGalleryList.indexOfFirst { it.id == viewingItem?.id }.coerceAtLeast(0)
+    }
 
     val googleSignInLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.StartActivityForResult()
@@ -131,7 +140,14 @@ fun MediaVaultScreen(
                     actions = {
                         if (selectedIds.isNotEmpty()) {
                             IconButton(onClick = { 
-                                Toast.makeText(context, "Deleting ${selectedIds.size} items...", Toast.LENGTH_SHORT).show()
+                                if (activeTab == 0) {
+                                    Toast.makeText(context, "Deleting ${selectedIds.size} local references...", Toast.LENGTH_SHORT).show()
+                                    // Local delete logic can be expanded here if needed
+                                } else {
+                                    viewModel.deleteRestoredItems { success, total ->
+                                        Toast.makeText(context, "Deleted $success of $total from Cloud", Toast.LENGTH_SHORT).show()
+                                    }
+                                }
                             }) {
                                 Icon(Icons.Default.Delete, contentDescription = "Delete", tint = Color.Red)
                             }
@@ -218,6 +234,31 @@ fun MediaVaultScreen(
                                 Spacer(modifier = Modifier.width(8.dp))
                                 Text("BACKUP SELECTED (${selectedIds.size})", fontWeight = FontWeight.Bold)
                             }
+                        }
+                    }
+                }
+            } else if (isConnected && activeTab == 1) {
+                if (selectedIds.isNotEmpty()) {
+                    Surface(
+                        modifier = Modifier.fillMaxWidth(),
+                        color = CyberGray,
+                        tonalElevation = 8.dp
+                    ) {
+                        Button(
+                            onClick = { 
+                                viewModel.downloadSelectedFromRestored { success, total ->
+                                    Toast.makeText(context, "Downloaded $success of $total items", Toast.LENGTH_SHORT).show()
+                                }
+                            },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(16.dp),
+                            colors = ButtonDefaults.buttonColors(containerColor = NeonBlue),
+                            shape = RoundedCornerShape(8.dp)
+                        ) {
+                            Icon(Icons.Default.Download, contentDescription = null)
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("DOWNLOAD SELECTED (${selectedIds.size})", fontWeight = FontWeight.Bold)
                         }
                     }
                 }
@@ -328,16 +369,18 @@ fun MediaVaultScreen(
             // Media Viewer
             viewingItem?.let { item ->
                 MediaViewer(
-                    item = item,
+                    items = currentGalleryList,
+                    initialIndex = initialViewerIndex,
                     isRestored = activeTab == 1,
-                    onSave = {
-                        viewModel.saveToGallery(item) { success ->
+                    onSave = { selectedItem ->
+                        viewModel.saveToGallery(selectedItem) { success ->
                             Toast.makeText(context, if (success) "Saved to Gallery" else "Failed to save", Toast.LENGTH_SHORT).show()
                         }
                     },
                     onClose = { viewModel.setViewingItem(null) }
                 )
             }
+
         }
     }
 }
@@ -388,27 +431,54 @@ fun MediaGridItem(
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun MediaViewer(
-    item: MediaItem,
+    items: List<MediaItem>,
+    initialIndex: Int,
     isRestored: Boolean = false,
-    onSave: (() -> Unit)? = null,
+    onSave: ((MediaItem) -> Unit)? = null,
     onClose: () -> Unit
 ) {
-    Box(modifier = Modifier.fillMaxSize().background(Color.Black).clickable { onClose() }) {
-        AsyncImage(model = item.uri, contentDescription = null, modifier = Modifier.fillMaxSize().padding(16.dp), contentScale = ContentScale.Fit)
+    val pagerState = rememberPagerState(initialPage = initialIndex, pageCount = { items.size })
+    val currentItem = items.getOrNull(pagerState.currentPage)
+
+    Box(modifier = Modifier.fillMaxSize().background(Color.Black)) {
+        HorizontalPager(
+            state = pagerState,
+            modifier = Modifier.fillMaxSize(),
+            beyondBoundsPageCount = 1
+        ) { page ->
+            val item = items[page]
+            Box(
+                modifier = Modifier.fillMaxSize().clickable(
+                    interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() },
+                    indication = null
+                ) { onClose() },
+                contentAlignment = Alignment.Center
+            ) {
+                AsyncImage(
+                    model = item.uri,
+                    contentDescription = null,
+                    modifier = Modifier.fillMaxSize().padding(16.dp),
+                    contentScale = ContentScale.Fit
+                )
+            }
+        }
         
+        // Header
         Row(
             modifier = Modifier.align(Alignment.TopEnd).padding(16.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            if (isRestored && onSave != null) {
+            if (isRestored && onSave != null && currentItem != null) {
                 IconButton(
-                    onClick = onSave,
-                    modifier = Modifier.background(Color.Black.copy(alpha = 0.5f), CircleShape).padding(end = 8.dp)
+                    onClick = { onSave(currentItem) },
+                    modifier = Modifier.background(Color.Black.copy(alpha = 0.5f), CircleShape)
                 ) {
                     Icon(Icons.Default.SaveAlt, contentDescription = "Save to device", tint = Color.White)
                 }
+                Spacer(modifier = Modifier.width(8.dp))
             }
             IconButton(
                 onClick = onClose,
@@ -418,11 +488,19 @@ fun MediaViewer(
             }
         }
 
-        Column(
-            modifier = Modifier.align(Alignment.BottomStart).fillMaxWidth().background(Brush.verticalGradient(colors = listOf(Color.Transparent, Color.Black.copy(alpha = 0.8f)))).padding(24.dp)
-        ) {
-            Text(item.name, color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.Bold)
-            Text("${(item.size / 1024)} KB • ${item.mimeType}", color = Color.Gray, fontSize = 14.sp)
+        // Footer
+        currentItem?.let { item ->
+            Column(
+                modifier = Modifier
+                    .align(Alignment.BottomStart)
+                    .fillMaxWidth()
+                    .background(Brush.verticalGradient(colors = listOf(Color.Transparent, Color.Black.copy(alpha = 0.8f))))
+                    .padding(24.dp)
+            ) {
+                Text(item.name, color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                Text("${(item.size / 1024)} KB • ${item.mimeType}", color = Color.Gray, fontSize = 14.sp)
+                Text("${pagerState.currentPage + 1} / ${items.size}", color = NeonBlue, fontSize = 12.sp, modifier = Modifier.padding(top = 4.dp))
+            }
         }
     }
 }
