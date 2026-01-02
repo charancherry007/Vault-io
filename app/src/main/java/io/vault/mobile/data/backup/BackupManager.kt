@@ -1,27 +1,35 @@
 package io.vault.mobile.data.backup
 
+import io.vault.mobile.data.local.PreferenceManager
 import android.util.Base64
 import com.google.gson.Gson
 import io.vault.mobile.data.cloud.GoogleDriveManager
 import io.vault.mobile.data.repository.VaultRepository
-import io.vault.mobile.security.CryptoManager
+import io.vault.mobile.security.*
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import io.vault.mobile.security.KeyDerivation
 import java.io.File
-
+import io.vault.mobile.data.model.MediaManifest
+import io.vault.mobile.data.model.MediaManifestEntry
+import android.net.Uri
+import java.io.FileInputStream
+import java.io.FileOutputStream
 import javax.inject.Inject
 import javax.inject.Singleton
 
 @Singleton
 class BackupManager @Inject constructor(
     private val repository: VaultRepository,
-    private val driveManager: GoogleDriveManager
+    private val driveManager: GoogleDriveManager,
+    private val encryptionService: EncryptionService,
+    private val masterKeyManager: MasterKeyManager,
+    private val preferenceManager: PreferenceManager
 ) {
     private val gson = Gson()
     private val BACKUP_FILE_NAME = "vault_password_backup.bin"
     private val BACKUP_VERSION: Byte = 0x02
+    private val MANIFEST_FILE_NAME = "media_manifest.enc"
 
     data class VaultBackup(
         val entries: List<VaultEntryDto>,
@@ -72,10 +80,35 @@ class BackupManager @Inject constructor(
         }
     }
 
-    suspend fun restoreBackup(password: String): Boolean = withContext(Dispatchers.IO) {
+    suspend fun restoreAll(password: String): Boolean = withContext(Dispatchers.IO) {
+        try {
+            // 1. Restore Master Key (Keystone) first
+            val mkRestored = masterKeyManager.restoreMasterKeyFromDrive(password)
+            if (!mkRestored) return@withContext false
+
+            // 2. Restore Passwords
+            val passwordsRestored = restorePasswords(password)
+            
+            // 3. Restore Media
+            val mediaRestored = restoreAllMedia()
+
+            if (passwordsRestored && mediaRestored) {
+                // Feature 3: Set restore metadata once successful
+                preferenceManager.setLastRestoreTime(System.currentTimeMillis())
+                true
+            } else {
+                false
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+            false
+        }
+    }
+
+    private suspend fun restorePasswords(password: String): Boolean = withContext(Dispatchers.IO) {
         try {
             val driveFiles = driveManager.listFiles()
-            val backupFile = driveFiles.find { it.name == BACKUP_FILE_NAME } ?: return@withContext false
+            val backupFile = driveFiles.find { it.name == BACKUP_FILE_NAME } ?: return@withContext true // Skip if none
             
             val tempFile = File(driveManager.getContext().cacheDir, BACKUP_FILE_NAME)
             val downloadSuccess = driveManager.downloadFile(backupFile.id, tempFile)
@@ -106,7 +139,6 @@ class BackupManager @Inject constructor(
                 
                 // 3. Derive Key with correct iterations
                 val key = KeyDerivation.deriveKey(password, salt, iterations)
-                // 4. Decrypt
                 val decryptedJsonBytes = CryptoManager.decryptWithKey(encryptedData, key)
                 val decryptedJson = decryptedJsonBytes.decodeToString()
                 
@@ -123,12 +155,98 @@ class BackupManager @Inject constructor(
                     )
                 }
                 true
-            } else {
-                false
-            }
+            } else false
         } catch (e: Exception) {
             e.printStackTrace()
             false
         }
     }
+
+    private suspend fun restoreAllMedia(): Boolean = withContext(Dispatchers.IO) {
+        try {
+            val manifest = loadManifest() ?: return@withContext true // No manifest is fine
+
+            manifest.entries.forEach { entry ->
+                val decryptedFile = File(driveManager.getContext().filesDir, "restored_${entry.fileName}")
+                
+                // Feature 3: Check if file already exists locally
+                if (decryptedFile.exists()) {
+                    return@forEach // Skip if already restored
+                }
+
+                val tempEncFile = File(driveManager.getContext().cacheDir, entry.blobDriveId + ".enc")
+                val success = driveManager.downloadFile(entry.blobDriveId, tempEncFile)
+                
+                if (success) {
+                    try {
+                        val inputStream = FileInputStream(tempEncFile)
+                        val outputStream = FileOutputStream(decryptedFile)
+                        encryptionService.decrypt(inputStream, outputStream)
+                        inputStream.close()
+                        outputStream.close()
+                    } catch (e: Exception) {
+                        e.printStackTrace()
+                    } finally {
+                        tempEncFile.delete()
+                    }
+                }
+            }
+            true
+        } catch (e: Exception) {
+            e.printStackTrace()
+            false
+        }
+    }
+
+    suspend fun loadManifest(): MediaManifest? = withContext(Dispatchers.IO) {
+        if (!encryptionService.isKeyInitialized()) return@withContext null
+        
+        val driveFiles = driveManager.listFiles()
+        val manifestFile = driveFiles.find { it.name == MANIFEST_FILE_NAME } ?: return@withContext null
+        
+        val tempEncFile = File(driveManager.getContext().cacheDir, MANIFEST_FILE_NAME)
+        val success = driveManager.downloadFile(manifestFile.id, tempEncFile)
+        
+        if (success) {
+            val decryptedFile = File(driveManager.getContext().cacheDir, "manifest_decrypted.json")
+            try {
+                val inputStream = FileInputStream(tempEncFile)
+                val outputStream = FileOutputStream(decryptedFile)
+                encryptionService.decrypt(inputStream, outputStream)
+                inputStream.close()
+                outputStream.close()
+                
+                val json = decryptedFile.readText()
+                gson.fromJson(json, MediaManifest::class.java)
+            } finally {
+                tempEncFile.delete()
+                decryptedFile.delete()
+            }
+        } else null
+    }
+
+    suspend fun saveManifest(manifest: MediaManifest) = withContext(Dispatchers.IO) {
+        if (!encryptionService.isKeyInitialized()) return@withContext
+        
+        val json = gson.toJson(manifest)
+        val tempJsonFile = File(driveManager.getContext().cacheDir, "manifest_to_encrypt.json")
+        tempJsonFile.writeText(json)
+        
+        val tempEncFile = File(driveManager.getContext().cacheDir, MANIFEST_FILE_NAME)
+        try {
+            val inputStream = FileInputStream(tempJsonFile)
+            val outputStream = FileOutputStream(tempEncFile)
+            encryptionService.encrypt(inputStream, outputStream)
+            inputStream.close()
+            outputStream.close()
+            
+            driveManager.uploadFile(tempEncFile, "application/octet-stream")
+        } finally {
+            tempJsonFile.delete()
+            tempEncFile.delete()
+        }
+    }
+
+    // Deprecated in favor of restoreAll, but kept for partial compatibility
+    suspend fun restoreBackup(password: String): Boolean = restorePasswords(password)
 }

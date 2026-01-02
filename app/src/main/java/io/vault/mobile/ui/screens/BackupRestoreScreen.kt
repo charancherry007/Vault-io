@@ -188,7 +188,10 @@ fun BackupRestoreScreen(
                             if (remoteKeyExists) {
                                 showPasswordDialog = true 
                             } else {
-                                viewModel.validateAndRestoreCloudBackup(masterPassword) { onNavigateBack() }
+                                viewModel.validateAndRestoreCloudBackup(masterPassword) { 
+                                    Toast.makeText(context, "Vault and media restored successfully.", Toast.LENGTH_LONG).show()
+                                    onNavigateBack() 
+                                }
                             }
                         },
                         modifier = Modifier.weight(1f),
@@ -233,7 +236,10 @@ fun BackupRestoreScreen(
                         Button(
                             onClick = {
                                 showPasswordDialog = false
-                                viewModel.validateAndRestoreCloudBackup(masterPassword) { onNavigateBack() }
+                                viewModel.validateAndRestoreCloudBackup(masterPassword) { 
+                                    Toast.makeText(context, "Vault and media restored successfully.", Toast.LENGTH_LONG).show()
+                                    onNavigateBack() 
+                                }
                             },
                             colors = ButtonDefaults.buttonColors(containerColor = NeonBlue)
                         ) {
