@@ -39,10 +39,8 @@ class EncryptionTest {
         val encryptedBytes = encryptedOutput.toByteArray()
         
         // 2. Verify Padding (32KB boundary)
-        // Format: 1 (IV size) + 12 (IV) + 8 (size) + Data + Padding + 16 (Tag)
-        // Header + Data + Padding = 32768
-        // Total = 1 + 12 + 32768 + 16 = 32797
-        assertEquals(32797, encryptedBytes.size)
+        // Total = 1 (version) + 1 (IV size) + 12 (IV) + 32768 (padded data block) + 16 (Tag) = 32798
+        assertEquals(32798, encryptedBytes.size)
         
         // 3. Decrypt
         val decryptedOutput = ByteArrayOutputStream()
